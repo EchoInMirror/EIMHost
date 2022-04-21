@@ -6,7 +6,8 @@ int main (int argc, char* argv[]) {
     manager.addDefaultFormats();
     juce::OwnedArray<juce::PluginDescription> results;
     for (auto it : manager.getFormats()) it->findAllTypesForFile(results, juce::StringArray(argv + 1, argc - 1).joinIntoString(" "));
-    if (results.isEmpty()) return 1;
+    printf("%d\n", results.size());
+    if (results.isEmpty()) return 0;
     juce::XmlElement::TextFormat format;
     format.newLineChars = nullptr;
     format.addDefaultHeader = false;
