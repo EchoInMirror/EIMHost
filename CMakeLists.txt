@@ -7,8 +7,6 @@ add_definitions(-DJUCE_USE_MP3AUDIOFORMAT -DJUCE_PLUGINHOST_VST3 -DJUCE_PLUGINHO
 
 file(GLOB EIM_SRC_FILES "src/*.cpp" "src/*.h")
 
-add_subdirectory(cpp-ipc)
-
 add_subdirectory(JUCE)
 juce_add_console_app(EIMPluginHost PRODUCT_NAME "EIMPluginHost")
 target_sources(EIMPluginHost PRIVATE ${EIM_SRC_FILES} ${PROTO_SRCS} ${PROTO_HDRS})
@@ -41,7 +39,6 @@ target_compile_definitions(EIMPluginHost
 
 target_link_libraries(EIMPluginHost
     PRIVATE
-        ipc
         juce::juce_gui_extra
         juce::juce_audio_utils
     PUBLIC
