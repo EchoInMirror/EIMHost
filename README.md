@@ -10,18 +10,18 @@
 ### Generate project
 
 ```bash
-git clone --recursive https://github.com/EchoInMirror/EIMPluginHost.git
+git clone --recursive https://github.com/EchoInMirror/EIMHost.git
 
-cd EIMPluginHost
+cd EIMHost
 
 mkdir build
 
 cd build
 
-cmake -G "Visual Studio 17 2022" -A x64 .. -DCMAKE_TOOLCHAIN_FILE=<VCPkg install location>/scripts/buildsystems/vcpkg.cmake
+cmake -G "Visual Studio 17 2022" -A x64 ..
 ```
 
-Then open **EIMPluginHost/build/EIMPluginHost.sln**
+Then open **EIMHost/build/EIMHost.sln**
 
 ## License
 

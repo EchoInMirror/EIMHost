@@ -1,13 +1,17 @@
 #include "PluginWindow.h"
 #include <io.h>
 #include <fcntl.h>
-#define _CRT_SECURE_NO_WARNINGS 1
 #define READ(var) std::fread(&var, sizeof(var), 1, stdin)
 
 juce::ArgumentList* args;
 juce::AudioPluginFormatManager manager;
 
 template <typename T> inline void write(T var) { std::fwrite(&var, sizeof(var), 1, stdout); }
+void writeError(juce::String str) {
+    write((char)127);
+    write(str.length());
+    std::fwrite(str.toRawUTF8(), sizeof(char), str.length(), stdout);
+}
 
 class EIMPluginHost : public juce::JUCEApplication, public juce::AudioPlayHead, private juce::Thread {
 public:
@@ -18,14 +22,18 @@ public:
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise(const juce::String&) override {
+        write((short)0x0102);
         juce::PluginDescription desc;
-        auto xml = juce::parseXML(args->getValueForOption("-l|--load"));
-        desc.loadFromXml(*xml);
-        xml = nullptr;
+        auto json = juce::JSON::fromString(args->getValueForOption("-l|--load"));
+        desc.name = json.getProperty("name", "").toString();
+        desc.pluginFormatName = json.getProperty("pluginFormatName", "").toString();
+        desc.fileOrIdentifier = json.getProperty("fileOrIdentifier", "").toString();
+        desc.uniqueId = (int)json.getProperty("uniqueId", 0);
+        desc.deprecatedUid = (int)json.getProperty("deprecatedUid", 0);
         juce::String error;
         processor = manager.createPluginInstance(desc, sampleRate, bufferSize, error);
         if (error.isNotEmpty()) {
-            std::cerr << error;
+            writeError(error);
             quit();
             return;
         }
@@ -52,8 +60,7 @@ public:
         processor->processBlock(buffer, buf);
         */
 
-        write((unsigned char) 0u);
-        write((short)0x0102);
+        write((char) 0);
         write(processor->getTotalNumInputChannels());
         write(processor->getTotalNumOutputChannels());
         fflush(stdout);
@@ -61,7 +68,7 @@ public:
     }
 
     void run() override {
-        unsigned char id;
+        char id;
         while (!threadShouldExit() && std::fread(&id, 1, 1, stdin) == 1) {
             switch (id) {
                 case 0: {
@@ -76,20 +83,26 @@ public:
                 case 1: {
                     double bpm;
                     long long timeInSamples;
+                    char numInputChannels, numOutputChannels;
+                    char isPlaying;
+                    READ(isPlaying);
                     READ(bpm);
                     READ(timeInSamples);
+                    READ(numInputChannels);
+                    READ(numOutputChannels);
                     double timeInSeconds = (double)timeInSamples / sampleRate;
                     juce::MessageManagerLock mml(Thread::getCurrentThread());
                     if (!mml.lockWasGained()) return;
+                    positionInfo.setIsPlaying(isPlaying);
                     positionInfo.setBpm(bpm);
                     positionInfo.setTimeInSamples(timeInSamples);
                     positionInfo.setTimeInSeconds(timeInSeconds);
                     positionInfo.setPpqPosition(timeInSeconds / 60.0 * bpm);
-                    for (int i = 0; i < processor->getTotalNumInputChannels(); i++) std::fread(buffer.getWritePointer(i), sizeof(float), bufferSize, stdin);
+                    for (int i = 0; i < numInputChannels; i++) std::fread(buffer.getWritePointer(i), sizeof(float), bufferSize, stdin);
                     juce::MidiBuffer buf;
                     processor->processBlock(buffer, buf);
-                    write((unsigned char) 1u);
-                    for (int i = 0; i < processor->getTotalNumOutputChannels(); i++) std::fwrite(buffer.getReadPointer(i), sizeof(float), bufferSize, stdout);
+                    write((char) 1);
+                    for (int i = 0; i < numOutputChannels; i++) std::fwrite(buffer.getReadPointer(i), sizeof(float), bufferSize, stdout);
                     fflush(stdout);
                     break;
                 }
@@ -140,13 +153,26 @@ int main(int argc, char* argv[]) {
             juce::shutdownJuce_GUI();
             return -1;
         }
-        juce::XmlElement::TextFormat format;
-        format.newLineChars = nullptr;
-        format.addDefaultHeader = false;
+        juce::Array<juce::var> arr;
         for (auto it : results) {
-            puts(it->createXml().release()->toString(format).toRawUTF8());
-            putchar('\n');
+            auto obj = new juce::DynamicObject();
+            obj->setProperty("name", it->name);
+            obj->setProperty("descriptiveName", it->descriptiveName);
+            obj->setProperty("pluginFormatName", it->pluginFormatName);
+            obj->setProperty("category", it->category);
+            obj->setProperty("manufacturerName", it->manufacturerName);
+            obj->setProperty("version", it->version);
+            obj->setProperty("fileOrIdentifier", it->fileOrIdentifier);
+            obj->setProperty("lastFileModTime", it->lastFileModTime.toMilliseconds());
+            obj->setProperty("lastInfoUpdateTime", it->lastInfoUpdateTime.toMilliseconds());
+            obj->setProperty("deprecatedUid", it->deprecatedUid);
+            obj->setProperty("uniqueId", it->uniqueId);
+            obj->setProperty("isInstrument", it->isInstrument);
+            obj->setProperty("hasSharedContainer", it->hasSharedContainer);
+            obj->setProperty("hasARAExtension", it->hasARAExtension);
+            arr.add(obj);
         }
+        puts(juce::JSON::toString(arr, true).toRawUTF8());
     } else if (args->containsOption("-l|--load")) {
         juce::JUCEApplicationBase::createInstance = EIMPluginHost::createInstance;
         juce::JUCEApplicationBase::main(argc, (const char**)argv);

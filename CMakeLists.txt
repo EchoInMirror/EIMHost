@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(EIMPluginHost VERSION 0.0.0)
+project(EIMHost VERSION 0.0.0)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 set(CMAKE_CXX_STANDARD 23)
@@ -8,8 +8,8 @@ add_definitions(-DJUCE_USE_MP3AUDIOFORMAT -DJUCE_PLUGINHOST_VST3 -DJUCE_PLUGINHO
 file(GLOB EIM_SRC_FILES "src/*.cpp" "src/*.h")
 
 add_subdirectory(JUCE)
-juce_add_console_app(EIMPluginHost PRODUCT_NAME "EIMPluginHost")
-target_sources(EIMPluginHost PRIVATE ${EIM_SRC_FILES} ${PROTO_SRCS} ${PROTO_HDRS})
+juce_add_console_app(EIMHost PRODUCT_NAME "EIMHost")
+target_sources(EIMHost PRIVATE ${EIM_SRC_FILES})
 
 if(MSVC)
     set(vst2sdkPath ${CMAKE_CURRENT_BINARY_DIR}/vst2sdk)
@@ -24,20 +24,20 @@ if(MSVC)
     endif()
     include_directories(${vst2sdkPath})
 
-    add_definitions(-D_WIN32_WINNT=0x0601)
+    add_definitions(-D_CRT_SECURE_NO_WARNINGS)
     string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHa")
-    set_property(TARGET EIMPluginHost PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    set_property(TARGET EIMHost PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif(MSVC)
 
-target_compile_definitions(EIMPluginHost
+target_compile_definitions(EIMHost
     PRIVATE
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
-        JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:EIMPluginHost,JUCE_PRODUCT_NAME>"
-        JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:EIMPluginHost,JUCE_VERSION>")
+        JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:EIMHost,JUCE_PRODUCT_NAME>"
+        JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:EIMHost,JUCE_VERSION>")
 
-target_link_libraries(EIMPluginHost
+target_link_libraries(EIMHost
     PRIVATE
         juce::juce_gui_extra
         juce::juce_audio_utils
