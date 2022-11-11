@@ -5,6 +5,9 @@ on:
     types:
       - created
 
+env:
+  BUILD_TYPE: release
+
 jobs:
   build:
     name: ${{ matrix.os }}-${{ github.workflow }}

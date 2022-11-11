@@ -24,7 +24,7 @@ public:
     void initialise(const juce::String&) override {
         write((short)0x0102);
         juce::PluginDescription desc;
-        auto json = juce::JSON::fromString(args->getValueForOption("-l|--load"));
+        auto json = juce::JSON::fromString(args->getValueForOption("-L|--load"));
         desc.name = json.getProperty("name", "").toString();
         desc.pluginFormatName = json.getProperty("pluginFormatName", "").toString();
         desc.fileOrIdentifier = json.getProperty("fileOrIdentifier", "").toString();
@@ -145,9 +145,9 @@ int main(int argc, char* argv[]) {
     juce::initialiseJuce_GUI();
     manager.addDefaultFormats();
 
-    if (args->containsOption("-s|--scan")) {
+    if (args->containsOption("-S|--scan")) {
         juce::OwnedArray<juce::PluginDescription> results;
-        for (auto it : manager.getFormats()) it->findAllTypesForFile(results, args->getValueForOption("-s|--scan"));
+        for (auto it : manager.getFormats()) it->findAllTypesForFile(results, args->getValueForOption("-S|--scan"));
 
         if (results.isEmpty()) {
             juce::shutdownJuce_GUI();
@@ -172,8 +172,8 @@ int main(int argc, char* argv[]) {
             obj->setProperty("hasARAExtension", it->hasARAExtension);
             arr.add(obj);
         }
-        puts(juce::JSON::toString(arr, true).toRawUTF8());
-    } else if (args->containsOption("-l|--load")) {
+        puts(("$EIMHostScanner{{" + juce::JSON::toString(arr, true) + "}}EIMHostScanner$").toRawUTF8());
+    } else if (args->containsOption("-L|--load")) {
         juce::JUCEApplicationBase::createInstance = EIMPluginHost::createInstance;
         juce::JUCEApplicationBase::main(argc, (const char**)argv);
     }
