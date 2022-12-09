@@ -1,10 +1,24 @@
 #include "PluginWindow.h"
 #include <io.h>
 #include <fcntl.h>
+#include <juce_audio_devices/juce_audio_devices.h>
+#include <juce_audio_utils/juce_audio_utils.h>
+
 #define READ(var) std::fread(&var, sizeof(var), 1, stdin)
+
+void setIOMode() {
+    freopen(nullptr, "rb", stdin);
+    freopen(nullptr, "wb", stdout);
+#ifdef _MSC_VER
+    _setmode(_fileno(stdin), _O_BINARY);
+    _setmode(_fileno(stdout), _O_BINARY);
+#endif
+}
 
 juce::ArgumentList* args;
 juce::AudioPluginFormatManager manager;
+juce::AudioDeviceManager::AudioDeviceSetup setup;
+bool done = false;
 
 template <typename T> inline void write(T var) { std::fwrite(&var, sizeof(var), 1, stdout); }
 void writeError(juce::String str) {
@@ -39,12 +53,7 @@ public:
         }
         processor->setPlayHead(this);
         window.reset(new PluginWindow(*processor));
-        freopen(nullptr, "rb", stdin);
-        freopen(nullptr, "wb", stdout);
-#ifdef _MSC_VER
-        _setmode(_fileno(stdin), _O_BINARY);
-        _setmode(_fileno(stdout), _O_BINARY);
-#endif
+        setIOMode();
         /*
         processor->prepareToPlay(sampleRate, bufferSize);
         buffer.setSize(juce::jmax(processor->getTotalNumInputChannels(), processor->getTotalNumOutputChannels()), bufferSize);
@@ -136,16 +145,46 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EIMPluginHost)
 };
 
+class AudioCallback : public juce::AudioIODeviceCallback {
+public:
+    AudioCallback() {}
+
+    void audioDeviceIOCallbackWithContext(const float* const*, int, float* const* outputChannelData, int, int, const juce::AudioIODeviceCallbackContext&) override {
+        write((char)0);
+        fflush(stdout);
+        char id;
+        if (std::fread(&id, 1, 1, stdin) != 1) return;
+        switch (id) {
+        case 0:
+        {
+            char numOutputChannels;
+            READ(numOutputChannels);
+            for (int i = 0; i < numOutputChannels; i++) std::fread(outputChannelData[i], sizeof(float), setup.bufferSize, stdin);
+            break;
+        }
+        default: done = true;
+        }
+    }
+
+    void audioDeviceAboutToStart(juce::AudioIODevice* device) override {
+        std::cerr << "Device started: " << device->getName() << std::endl;
+    }
+
+    void audioDeviceStopped() override { }
+
+    void audioDeviceError(const juce::String& errorMessage) override { std::cerr << errorMessage << std::endl; }
+};
+
 int main(int argc, char* argv[]) {
     std::ios::sync_with_stdio(false);
     std::cin.tie(0);
     std::cout.tie(0);
     std::cerr.tie(0);
     args = new juce::ArgumentList(argc, argv);
-    juce::initialiseJuce_GUI();
-    manager.addDefaultFormats();
 
     if (args->containsOption("-S|--scan")) {
+        juce::initialiseJuce_GUI();
+        manager.addDefaultFormats();
         juce::OwnedArray<juce::PluginDescription> results;
         for (auto it : manager.getFormats()) it->findAllTypesForFile(results, args->getValueForOption("-S|--scan"));
 
@@ -173,11 +212,26 @@ int main(int argc, char* argv[]) {
             arr.add(obj);
         }
         puts(("$EIMHostScanner{{" + juce::JSON::toString(arr, true) + "}}EIMHostScanner$").toRawUTF8());
+        juce::shutdownJuce_GUI();
     } else if (args->containsOption("-L|--load")) {
+        juce::initialiseJuce_GUI();
+        manager.addDefaultFormats();
         juce::JUCEApplicationBase::createInstance = EIMPluginHost::createInstance;
         juce::JUCEApplicationBase::main(argc, (const char**)argv);
-    }
+        juce::shutdownJuce_GUI();
+    } else if (args->containsOption("-O|--output")) {
+        juce::AudioDeviceManager deviceManager;
+        AudioCallback audioCallback;
 
-    juce::shutdownJuce_GUI();
+        setup.bufferSize = args->containsOption("-B|--bufferSize") ? args->getValueForOption("-B|--bufferSize").getIntValue() : 1024;
+        setup.sampleRate = args->containsOption("-R|--sampleRate") ? args->getValueForOption("-R|--sampleRate").getIntValue() : 44800;
+        deviceManager.initialise(0, 2, nullptr, false, "", &setup);
+        deviceManager.addAudioCallback(&audioCallback);
+
+        write((short)0x0102);
+        fflush(stdout);
+        setIOMode();
+        while (!done) juce::Thread::sleep(30);
+    }
     return 0;
 }
