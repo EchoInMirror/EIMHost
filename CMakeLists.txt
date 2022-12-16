@@ -8,7 +8,15 @@ add_definitions(-DJUCE_USE_MP3AUDIOFORMAT -DJUCE_PLUGINHOST_VST3 -DJUCE_PLUGINHO
 file(GLOB EIM_SRC_FILES "src/*.cpp" "src/*.h")
 
 add_subdirectory(JUCE)
-juce_add_console_app(EIMHost PRODUCT_NAME "EIMHost")
+juce_add_console_app(EIMHost
+    VERSION "0.0.0"
+    PRODUCT_NAME "EIMHost"
+    COMPANY_NAME "Echo In Mirror"
+    ICON_SMALL "resources/logo128.png"
+    ICON_BIG "resources/logo512.png"
+)
+_juce_configure_bundle(EIMHost EIMHost)
+_juce_add_resources_rc(EIMHost EIMHost)
 target_sources(EIMHost PRIVATE ${EIM_SRC_FILES})
 
 if(MSVC)

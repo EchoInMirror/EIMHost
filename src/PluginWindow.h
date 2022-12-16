@@ -1,4 +1,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
+#ifdef JUCE_WINDOWS
+#include <Windows.h>
+#endif
 
 inline juce::String getFormatSuffix(const juce::AudioProcessor* plugin) {
 	if (auto* instance = dynamic_cast<const juce::AudioPluginInstance*> (plugin))
@@ -7,18 +10,16 @@ inline juce::String getFormatSuffix(const juce::AudioProcessor* plugin) {
 	return "";
 }
 
-class PluginWindow : public juce::DocumentWindow {
+class PluginWindow : public juce::ResizableWindow {
 public:
-	PluginWindow(juce::AudioProcessor& p)
-		: DocumentWindow(p.getName() + getFormatSuffix(&p),
-			juce::LookAndFeel::getDefaultLookAndFeel().findColour(ResizableWindow::backgroundColourId),
-			DocumentWindow::minimiseButton | DocumentWindow::closeButton), processor(p) {
+	PluginWindow(juce::AudioProcessor& p, long long parentHandle)
+		: ResizableWindow("[EIMHost] " + p.getName() + getFormatSuffix(&p), !parentHandle), processor(p) {
+		setUsingNativeTitleBar(true);
 		setSize(400, 300);
+		setResizable(true, false);
 
-		if (auto* ui = createProcessorEditor(processor)) {
-			setContentOwned(ui, true);
-			setResizable(ui->isResizable(), false);
-		}
+		auto* ui = createProcessorEditor(processor);
+		if (ui) setContentOwned(ui, true);
 
 		auto screenBounds = juce::Desktop::getInstance().getDisplays().getTotalBounds(true).toFloat();
 		auto scaleFactor = juce::jmin((screenBounds.getWidth() - 50) / getWidth(), (screenBounds.getHeight() - 50) / getHeight());
@@ -27,8 +28,11 @@ public:
 			setSize((int)(getWidth() * scaleFactor), (int)(getHeight() * scaleFactor));
 
 		setTopLeftPosition(20, 20);
-
 		setVisible(true);
+
+#ifdef JUCE_WINDOWS
+		if (parentHandle) addToDesktop(getDesktopWindowStyleFlags(), (HWND)(LONG_PTR)parentHandle);
+#endif
 	}
 
 	~PluginWindow() override {
@@ -38,19 +42,18 @@ public:
 	void moved() override {
 	}
 
-	void closeButtonPressed() override {
+	void userTriedToCloseWindow() override {
 		juce::JUCEApplication::quit();
 	}
 
 	juce::AudioProcessor& processor;
-
-	juce::BorderSize<int> getBorderThickness() override {
-#if JUCE_IOS || JUCE_ANDROID
-		const int border = 10;
-		return { border, border, border, border };
-#else
-		return DocumentWindow::getBorderThickness();
-#endif
+	
+	int getDesktopWindowStyleFlags() const override {
+		return ResizableWindow::getDesktopWindowStyleFlags()
+			| juce::ComponentPeer::windowHasMinimiseButton
+			| juce::ComponentPeer::windowHasMaximiseButton
+			| juce::ComponentPeer::windowHasCloseButton
+			| 1 << 28;
 	}
 
 private:
@@ -70,8 +73,8 @@ private:
 			return {};
 		}*/
 
-		/*jassertfalse;
-		return {};*/
+		jassertfalse;
+		return {};
 	}
 
 	//==============================================================================

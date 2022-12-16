@@ -1,3 +1,7 @@
+#pragma warning(disable: 6031)
+#pragma warning(disable: 6387)
+#pragma warning(disable: 6029)
+
 #include "PluginWindow.h"
 #include <io.h>
 #include <fcntl.h>
@@ -9,7 +13,7 @@
 void setIOMode() {
     freopen(nullptr, "rb", stdin);
     freopen(nullptr, "wb", stdout);
-#ifdef _MSC_VER
+#ifdef JUCE_WINDOWS
     _setmode(_fileno(stdin), _O_BINARY);
     _setmode(_fileno(stdout), _O_BINARY);
 #endif
@@ -52,7 +56,8 @@ public:
             return;
         }
         processor->setPlayHead(this);
-        window.reset(new PluginWindow(*processor));
+		window.reset(new PluginWindow(*processor, args->containsOption("-H|--handle")
+            ? args->getValueForOption("-H|--handle").getLargeIntValue() : 0));
         setIOMode();
         /*
         processor->prepareToPlay(sampleRate, bufferSize);
@@ -231,7 +236,7 @@ int main(int argc, char* argv[]) {
         write((short)0x0102);
         fflush(stdout);
         setIOMode();
-        while (!done) juce::Thread::sleep(30);
+        while (!done) juce::Thread::sleep(50);
     }
     return 0;
 }

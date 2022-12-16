@@ -21,13 +21,23 @@ jobs:
         uses: actions/checkout@v3
         with:
           submodules: true
+      
+      - name: Install Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
 
       - name: Build
-        run: mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build . --config Release
+        run: |
+          node patch
+          mkdir build
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release
+          cmake --build . --config MinSizeRel
 
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: ${{ github.workspace }}/build/EIMHost_artefacts/Release/EIMHost.exe
+          file: ${{ github.workspace }}/build/EIMHost_artefacts/MinSizeRel/EIMHost.exe
           tag: ${{ github.ref }}
