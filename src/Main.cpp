@@ -97,6 +97,7 @@ public:
                 case 1: {
                     double bpm;
                     long long timeInSamples;
+                    short midiEvents;
                     char numInputChannels, numOutputChannels;
                     char isPlaying;
                     READ(isPlaying);
@@ -104,6 +105,7 @@ public:
                     READ(timeInSamples);
                     READ(numInputChannels);
                     READ(numOutputChannels);
+                    READ(midiEvents);
                     double timeInSeconds = (double)timeInSamples / sampleRate;
                     juce::MessageManagerLock mml(Thread::getCurrentThread());
                     if (!mml.lockWasGained()) return;
@@ -114,6 +116,12 @@ public:
                     positionInfo.setPpqPosition(timeInSeconds / 60.0 * bpm);
                     for (int i = 0; i < numInputChannels; i++) std::fread(buffer.getWritePointer(i), sizeof(float), bufferSize, stdin);
                     juce::MidiBuffer buf;
+					for (int i = 0; i < midiEvents; i++) {
+                        int data, time;
+						READ(data);
+						READ(time);
+						buf.addEvent(juce::MidiMessage(data & 0xFF, (data >> 8) & 0xFF, (data >> 16) & 0xFF), time);
+					}
                     processor->processBlock(buffer, buf);
                     write((char) 1);
                     for (int i = 0; i < numOutputChannels; i++) std::fwrite(buffer.getReadPointer(i), sizeof(float), bufferSize, stdout);
@@ -145,7 +153,7 @@ private:
     std::unique_ptr<PluginWindow> window;
     std::unique_ptr<juce::AudioPluginInstance> processor;
     juce::AudioPlayHead::PositionInfo positionInfo;
-    int sampleRate = 44800, bufferSize = 1024;
+    int sampleRate = 44800, bufferSize = 1024, ppq = 96;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EIMPluginHost)
 };
@@ -172,7 +180,7 @@ public:
     }
 
     void audioDeviceAboutToStart(juce::AudioIODevice* device) override {
-        std::cerr << "Device started: " << device->getName() << std::endl;
+        std::cerr << "Device started: " << device->getName() << ", " << device->getOutputLatencyInSamples() << std::endl;
     }
 
     void audioDeviceStopped() override { }
@@ -230,13 +238,32 @@ int main(int argc, char* argv[]) {
 
         setup.bufferSize = args->containsOption("-B|--bufferSize") ? args->getValueForOption("-B|--bufferSize").getIntValue() : 1024;
         setup.sampleRate = args->containsOption("-R|--sampleRate") ? args->getValueForOption("-R|--sampleRate").getIntValue() : 44800;
-        deviceManager.initialise(0, 2, nullptr, false, "", &setup);
+
+#ifdef JUCE_WINDOWS
+        CoInitialize(nullptr);
+#endif
+        auto deviceType = args->getValueForOption("-T|--type");
+        auto deviceName = args->getValueForOption("-O|--output");
+        for (auto& it : deviceManager.getAvailableDeviceTypes()) {
+            if (deviceType == it->getTypeName()) it->scanForDevices();
+            /*std::cerr << it->getTypeName() << "\n";
+            for (auto& j : it->getDeviceNames()) std::cerr << "    " << j << "\n";*/
+        }
+        if (deviceType.isNotEmpty()) deviceManager.setCurrentAudioDeviceType(deviceType, true);
+        if (deviceName.isNotEmpty()) setup.outputDeviceName = setup.inputDeviceName = deviceName;
+        auto error = deviceManager.initialise(0, 2, nullptr, true, "", &setup);
+        if (error.isNotEmpty()) {
+            writeError(error);
+            std::cerr << error << std::endl;
+            return 1;
+        }
         deviceManager.addAudioCallback(&audioCallback);
 
         write((short)0x0102);
         fflush(stdout);
         setIOMode();
-        while (!done) juce::Thread::sleep(50);
+        while (!done) juce::Thread::sleep(100);
+        deviceManager.closeAudioDevice();
     }
     return 0;
 }
