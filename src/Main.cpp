@@ -117,7 +117,8 @@ public:
                     for (int i = 0; i < numInputChannels; i++) std::fread(buffer.getWritePointer(i), sizeof(float), bufferSize, stdin);
                     juce::MidiBuffer buf;
 					for (int i = 0; i < midiEvents; i++) {
-                        int data, time;
+                        int data;
+                        short time;
 						READ(data);
 						READ(time);
 						buf.addEvent(juce::MidiMessage(data & 0xFF, (data >> 8) & 0xFF, (data >> 16) & 0xFF), time);
