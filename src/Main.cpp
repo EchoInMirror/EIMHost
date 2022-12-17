@@ -233,17 +233,17 @@ int main(int argc, char* argv[]) {
         juce::JUCEApplicationBase::main(argc, (const char**)argv);
         juce::shutdownJuce_GUI();
     } else if (args->containsOption("-O|--output")) {
-        juce::AudioDeviceManager deviceManager;
-        AudioCallback audioCallback;
-
+        auto deviceType = args->getValueForOption("-T|--type");
+        auto deviceName = args->getValueForOption("-O|--output");
         setup.bufferSize = args->containsOption("-B|--bufferSize") ? args->getValueForOption("-B|--bufferSize").getIntValue() : 1024;
         setup.sampleRate = args->containsOption("-R|--sampleRate") ? args->getValueForOption("-R|--sampleRate").getIntValue() : 44800;
 
 #ifdef JUCE_WINDOWS
         CoInitialize(nullptr);
 #endif
-        auto deviceType = args->getValueForOption("-T|--type");
-        auto deviceName = args->getValueForOption("-O|--output");
+
+        juce::AudioDeviceManager deviceManager;
+        AudioCallback audioCallback;
         for (auto& it : deviceManager.getAvailableDeviceTypes()) {
             if (deviceType == it->getTypeName()) it->scanForDevices();
             /*std::cerr << it->getTypeName() << "\n";

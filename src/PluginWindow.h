@@ -16,7 +16,7 @@ public:
 		: ResizableWindow("[EIMHost] " + p.getName() + getFormatSuffix(&p), !parentHandle), processor(p) {
 		setUsingNativeTitleBar(true);
 		setSize(400, 300);
-		setResizable(true, false);
+		if (p.wrapperType != p.wrapperType_VST) setResizable(true, false);
 
 		auto* ui = createProcessorEditor(processor);
 		if (ui) setContentOwned(ui, true);
@@ -50,7 +50,6 @@ public:
 	
 	int getDesktopWindowStyleFlags() const override {
 		return ResizableWindow::getDesktopWindowStyleFlags()
-			| juce::ComponentPeer::windowHasMinimiseButton
 			| juce::ComponentPeer::windowHasMaximiseButton
 			| juce::ComponentPeer::windowHasCloseButton
 			| 1 << 28;

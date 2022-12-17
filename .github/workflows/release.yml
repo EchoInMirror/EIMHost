@@ -27,6 +27,9 @@ jobs:
         with:
           node-version: 18
 
+      - name: Set version
+        run: version='${{ github.ref }}' && sed -i "s/[0-9]\{1,\}\.[0-9]\{1,\}\.[0-9]\{1,\}/${version:10}/" CMakeLists.txt
+
       - name: Build
         run: |
           node patch
