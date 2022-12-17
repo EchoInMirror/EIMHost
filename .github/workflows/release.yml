@@ -28,7 +28,7 @@ jobs:
           node-version: 18
 
       - name: Set version
-        run: version='${{ github.ref }}' && sed -i "s/[0-9]\{1,\}\.[0-9]\{1,\}\.[0-9]\{1,\}/${version:10}/" CMakeLists.txt
+        run: node -e "const fs=require('fs');fs.writeFileSync('CMakeLists.txt',fs.readFileSync('CMakeLists.txt','utf-8').replace(/1\.0\.0/g,'${{ github.ref }}'.replace('refs/tags/','')))"
 
       - name: Build
         run: |

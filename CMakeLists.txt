@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(EIMHost VERSION 0.0.0)
+project(EIMHost VERSION 1.0.0)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 set(CMAKE_CXX_STANDARD 23)
@@ -9,7 +9,7 @@ file(GLOB EIM_SRC_FILES "src/*.cpp" "src/*.h")
 
 add_subdirectory(JUCE)
 juce_add_console_app(EIMHost
-    VERSION "0.0.0"
+    VERSION "1.0.0"
     PRODUCT_NAME "EIMHost"
     COMPANY_NAME "Echo In Mirror"
     ICON_SMALL "resources/logo128.png"
