@@ -2,6 +2,19 @@
 
 ## Build
 
+## Usage
+
+```bash
+# Scan native audio plugins
+EIMHost --scan <file>
+
+# Load native audio plugins
+EIMHost --load <plugin_description> [--handle [window_handle]]
+
+# Scan native audio plugins
+EIMHost --output [device_name] [--type [device_type] --bufferSize [buffer_size] --sampleRate [sample_rate]]
+```
+
 ### Prerequisites
 
 - Microsoft Visual Studio 2022
