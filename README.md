@@ -1,7 +1,5 @@
 # EIM
 
-## Build
-
 ## Usage
 
 ```bash
@@ -11,9 +9,11 @@ EIMHost --scan <file>
 # Load native audio plugins
 EIMHost --load <plugin_description> [--handle [window_handle]]
 
-# Scan native audio plugins
+# Open native audio device
 EIMHost --output [device_name] [--type [device_type] --bufferSize [buffer_size] --sampleRate [sample_rate]]
 ```
+
+## Build
 
 ### Prerequisites
 
