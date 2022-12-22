@@ -3,7 +3,7 @@
 #include <Windows.h>
 #endif
 
-int _width = 0, _height = 0;
+int _width = 0, _height = 0, _x = 0, _y = 0;
 
 class PluginWindow : public juce::ResizableWindow {
 public:
@@ -16,6 +16,10 @@ public:
 		if (_width == 0) _width = component->getWidth();
 		if (_height == 0) _height = component->getHeight();
 		setSize(_width, _height);
+
+		if (_x > 20 && _y > 20) setTopLeftPosition(_x, _y);
+		else centreWithSize(_width, _height);
+		
 		setContentOwned(component, true);
 
 		auto screenBounds = juce::Desktop::getInstance().getDisplays().getTotalBounds(true).toFloat();
@@ -24,9 +28,8 @@ public:
 		if (scaleFactor < 1.0f)
 			setSize((int)(getWidth() * scaleFactor), (int)(getHeight() * scaleFactor));
 
-		setTopLeftPosition(20, 20);
 		setVisible(true);
-
+		
 #ifdef JUCE_WINDOWS
 		if (parentHandle) addToDesktop(getDesktopWindowStyleFlags(), (HWND)(LONG_PTR)parentHandle);
 #endif
@@ -36,7 +39,15 @@ public:
 		clearContentComponent();
 	}
 
-	void moved() override { }
+	void moved() override {
+		_x = getX();
+		_y = getY();
+	}
+
+	void resized() override {
+		_width = getWidth();
+		_height = getHeight();
+	}
 
 	void userTriedToCloseWindow() override { thisWindow.reset(nullptr); }
 	

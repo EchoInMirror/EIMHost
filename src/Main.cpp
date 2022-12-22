@@ -8,6 +8,10 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_utils/juce_audio_utils.h>
 
+#define FLAGS_IS_PLAYING   0b0001
+#define FLAGS_IS_LOOPING   0b0010
+#define FLAGS_IS_RECORDING 0b0100
+#define FLAGS_IS_REALTIME  0b1000
 #define READ(var) std::fread(&var, sizeof(var), 1, stdin)
 
 juce::ArgumentList* args;
@@ -50,7 +54,6 @@ public:
             return;
         }
         processor->setPlayHead(this);
-        createEditorWindow();
 
         freopen(nullptr, "rb", stdin);
         freopen(nullptr, "wb", stderr);
@@ -58,6 +61,8 @@ public:
         _setmode(_fileno(stdin), _O_BINARY);
         _setmode(_fileno(stderr), _O_BINARY);
 #endif
+
+        createEditorWindow();
 
         writeCerr((char) 0);
         writeCerr(processor->getTotalNumInputChannels());
@@ -84,8 +89,8 @@ public:
                     long long timeInSamples;
                     short midiEvents;
                     char numInputChannels, numOutputChannels;
-                    char isPlaying;
-                    READ(isPlaying);
+                    char flags;
+                    READ(flags);
                     READ(bpm);
                     READ(timeInSamples);
                     READ(numInputChannels);
@@ -94,7 +99,14 @@ public:
                     double timeInSeconds = (double)timeInSamples / sampleRate;
                     juce::MessageManagerLock mml(Thread::getCurrentThread());
                     if (!mml.lockWasGained()) return;
-                    positionInfo.setIsPlaying(isPlaying);
+					auto _isRealtime = (flags & FLAGS_IS_REALTIME) != 0;
+                    if (isRealtime != _isRealtime) {
+                        processor->setNonRealtime(!_isRealtime);
+                        isRealtime = _isRealtime;
+                    }
+                    positionInfo.setIsPlaying((flags & FLAGS_IS_PLAYING) != 0);
+					positionInfo.setIsLooping((flags & FLAGS_IS_LOOPING) != 0);
+					positionInfo.setIsRecording((flags & FLAGS_IS_RECORDING) != 0);
                     positionInfo.setBpm(bpm);
                     positionInfo.setTimeInSamples(timeInSamples);
                     positionInfo.setTimeInSeconds(timeInSeconds);
@@ -115,8 +127,11 @@ public:
                     break;
                 }
                 case 2: {
-                    if (window == nullptr) createEditorWindow();
-                    else window.reset(nullptr);
+                    juce::MessageManager::callAsync([this] {
+                        if (window == nullptr) createEditorWindow();
+                        else window.reset(nullptr);
+                    });
+                    break;
                 }
             }
         }
@@ -140,6 +155,7 @@ private:
     std::unique_ptr<PluginWindow> window;
     std::unique_ptr<juce::AudioPluginInstance> processor;
     juce::AudioPlayHead::PositionInfo positionInfo;
+    bool isRealtime = true;
     int sampleRate = 44800, bufferSize = 1024, ppq = 96;
 
     void createEditorWindow() {
