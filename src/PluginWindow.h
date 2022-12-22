@@ -15,19 +15,14 @@ public:
 		
 		if (_width == 0) _width = component->getWidth();
 		if (_height == 0) _height = component->getHeight();
-		setSize(_width, _height);
-
-		if (_x > 20 && _y > 20) setTopLeftPosition(_x, _y);
-		else centreWithSize(_width, _height);
-		
-		setContentOwned(component, true);
 
 		auto screenBounds = juce::Desktop::getInstance().getDisplays().getTotalBounds(true).toFloat();
 		auto scaleFactor = juce::jmin((screenBounds.getWidth() - 50) / getWidth(), (screenBounds.getHeight() - 50) / getHeight());
+		auto trueWidth = scaleFactor < 1.0f ? (int)(_width * scaleFactor) : _width;
+		auto trueHeight = scaleFactor < 1.0f ? (int)(_height * scaleFactor) : _height;
+		if (_x > 20 && _y > 20) setBounds(_x, _y, trueWidth, trueHeight); else centreWithSize(trueWidth, trueHeight);
 
-		if (scaleFactor < 1.0f)
-			setSize((int)(getWidth() * scaleFactor), (int)(getHeight() * scaleFactor));
-
+		setContentOwned(component, true);
 		setVisible(true);
 		
 #ifdef JUCE_WINDOWS
@@ -53,7 +48,8 @@ public:
 	
 	int getDesktopWindowStyleFlags() const override {
 		return ResizableWindow::getDesktopWindowStyleFlags()
-			| juce::ComponentPeer::windowHasMaximiseButton
+			| juce::ComponentPeer::windowHasMinimiseButton
+			| (isResizable() ? juce::ComponentPeer::windowHasMaximiseButton : 0)
 			| juce::ComponentPeer::windowHasCloseButton
 			| 1 << 28;
 	}
