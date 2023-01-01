@@ -17,7 +17,6 @@
 juce::ArgumentList* args;
 juce::AudioPluginFormatManager manager;
 juce::AudioDeviceManager::AudioDeviceSetup setup;
-bool done = false;
 
 template <typename T> inline void write(T var) { std::fwrite(&var, sizeof(var), 1, stdout); }
 template <typename T> inline void writeCerr(T var) { std::fwrite(&var, sizeof(var), 1, stderr); }
@@ -27,6 +26,14 @@ void writeError(juce::String str, FILE* file) {
     std::fwrite(str.toRawUTF8(), sizeof(char), str.length(), file);
     fflush(file);
     (file == stderr ? std::cout : std::cerr) << str << '\n';
+}
+std::string readString() {
+	int len;
+	READ(len);
+	char* str = new char[len + 1];
+	std::fread(str, sizeof(char), len, stdin);
+    str[len] = '\0';
+	return str;
 }
 
 class EIMPluginHost : public juce::JUCEApplication, public juce::AudioPlayHead, private juce::Thread {
@@ -54,6 +61,7 @@ public:
             return;
         }
         processor->setPlayHead(this);
+		if (args->containsOption("-P|--preset")) loadState(args->getValueForOption("-P|--preset"));
 
         freopen(nullptr, "rb", stdin);
         freopen(nullptr, "wb", stderr);
@@ -133,6 +141,20 @@ public:
                     });
                     break;
                 }
+                case 3: {
+                    juce::MessageManagerLock mml(Thread::getCurrentThread());
+                    if (!mml.lockWasGained()) return;
+                    juce::MemoryBlock memory;
+					processor->getStateInformation(memory);
+                    juce::File(readString()).replaceWithData(memory.getData(), memory.getSize());
+                    break;
+                }
+                case 4: {
+                    juce::MessageManagerLock mml(Thread::getCurrentThread());
+                    if (!mml.lockWasGained()) return;
+                    loadState(readString());
+                    break;
+                }
             }
         }
         quit();
@@ -168,6 +190,13 @@ private:
             args->containsOption("-H|--handle") ? args->getValueForOption("-H|--handle").getLargeIntValue() : 0));
     }
 
+    void loadState(juce::String file) {
+		juce::FileInputStream stream(file);
+        juce::MemoryBlock memory;
+        stream.readIntoMemoryBlock(memory);
+        processor->setStateInformation(memory.getData(), (int)memory.getSize());
+    }
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EIMPluginHost)
 };
 
@@ -180,7 +209,7 @@ public:
         fflush(stdout);
         char id;
         if (std::fread(&id, 1, 1, stdin) != 1) {
-            done = true;
+            lock.signal();
             return;
         }
         switch (id) {
@@ -191,7 +220,7 @@ public:
             for (int i = 0; i < numOutputChannels; i++) std::fread(outputChannelData[i], sizeof(float), setup.bufferSize, stdin);
             break;
         }
-        default: done = true;
+        default: lock.signal();
         }
     }
 
@@ -202,7 +231,10 @@ public:
     void audioDeviceStopped() override { }
 
     void audioDeviceError(const juce::String& errorMessage) override { std::cerr << errorMessage << '\n'; }
+
+    void waitDeviceClose() { lock.wait(); }
 private:
+    juce::WaitableEvent lock;
     juce::AudioDeviceManager& deviceManager;
 };
 
@@ -214,10 +246,21 @@ int main(int argc, char* argv[]) {
     args = new juce::ArgumentList(argc, argv);
 
     if (args->containsOption("-S|--scan")) {
-        juce::initialiseJuce_GUI();
         manager.addDefaultFormats();
+        auto id = args->getValueForOption("-S|--scan");
+        if (id.isEmpty()) {
+#ifdef JUCE_MAC
+            auto paths = manager.getFormat(0)->searchPathsForPlugins(juce::FileSearchPath(), true, true);
+            puts(juce::JSON::toString(paths).toRawUTF8());
+            return 0;
+#else
+			std::cerr << "No any file specified.\n";
+            return -1;
+#endif
+        }
+        juce::initialiseJuce_GUI();
         juce::OwnedArray<juce::PluginDescription> results;
-        for (auto it : manager.getFormats()) it->findAllTypesForFile(results, args->getValueForOption("-S|--scan"));
+        for (auto it : manager.getFormats()) it->findAllTypesForFile(results, id);
 
         if (results.isEmpty()) {
             juce::shutdownJuce_GUI();
@@ -232,6 +275,7 @@ int main(int argc, char* argv[]) {
             obj->setProperty("category", it->category);
             obj->setProperty("manufacturerName", it->manufacturerName);
             obj->setProperty("version", it->version);
+            obj->setProperty("identifier", it->createIdentifierString());
             obj->setProperty("fileOrIdentifier", it->fileOrIdentifier);
             obj->setProperty("lastFileModTime", it->lastFileModTime.toMilliseconds());
             obj->setProperty("lastInfoUpdateTime", it->lastInfoUpdateTime.toMilliseconds());
@@ -285,7 +329,7 @@ int main(int argc, char* argv[]) {
         _setmode(_fileno(stdin), _O_BINARY);
         _setmode(_fileno(stdout), _O_BINARY);
 #endif
-        while (!done) juce::Thread::sleep(100);
+        audioCallback.waitDeviceClose();
         deviceManager.closeAudioDevice();
     }
     return 0;
