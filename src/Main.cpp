@@ -135,6 +135,7 @@ public:
                     if (hostBufferPos > 0 && mtx.try_lock()) {
                         std::fwrite(hostBuffer, sizeof(char), hostBufferPos, stderr);
                         hostBufferPos = 0;
+                        mtx.unlock();
                     }
                     processor->processBlock(buffer, buf);
                     writeCerr((char) 1);
@@ -182,14 +183,18 @@ public:
     bool canControlTransport() override { return true; }
     
     virtual void transportPlay(bool shouldStartPlaying) override {
+        if (!mtx.try_lock()) return;
         writeToHostBuffer((char)2);
         writeToHostBuffer((char)shouldStartPlaying);
+        mtx.unlock();
     }
 
     void audioProcessorParameterChanged(juce::AudioProcessor*, int parameterIndex, float newValue) override {
+        if (!mtx.try_lock()) return;
         writeToHostBuffer((char)3);
         writeToHostBuffer(parameterIndex);
         writeToHostBuffer(newValue);
+        mtx.unlock();
     }
     
     void audioProcessorChanged(juce::AudioProcessor*, const ChangeDetails&) override {
@@ -226,10 +231,7 @@ private:
 
     template <typename T> inline void writeToHostBuffer(T var) {
         T* p = reinterpret_cast<T*>(&var);
-        if (mtx.try_lock()) {
-            for (int i = 0; i < sizeof(T); i++) hostBuffer[hostBufferPos++] = ((char*)p)[i];
-            mtx.unlock();
-        }
+        for (int i = 0; i < sizeof(T); i++) hostBuffer[hostBufferPos++] = ((char*)p)[i];
     }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EIMPluginHost)
