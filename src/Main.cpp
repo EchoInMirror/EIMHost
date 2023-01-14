@@ -80,7 +80,7 @@ public:
         writeCerr(processor->getTotalNumInputChannels());
         writeCerr(processor->getTotalNumOutputChannels());
         fflush(stderr);
-        startThread();
+        startThread(Priority::highest);
     }
 
     void run() override {
@@ -109,8 +109,6 @@ public:
                     READ(numOutputChannels);
                     READ(midiEvents);
                     double timeInSeconds = (double)timeInSamples / sampleRate;
-                    juce::MessageManagerLock mml(Thread::getCurrentThread());
-                    if (!mml.lockWasGained()) return;
                     auto _isRealtime = (flags & FLAGS_IS_REALTIME) != 0;
                     if (isRealtime != _isRealtime) {
                         processor->setNonRealtime(!_isRealtime);
