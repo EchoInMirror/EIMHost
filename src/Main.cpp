@@ -130,9 +130,13 @@ public:
                         READ(time);
                         buf.addEvent(juce::MidiMessage(data & 0xFF, (data >> 8) & 0xFF, (data >> 16) & 0xFF), time);
                     }
-                    if (hostBufferPos > 0 && mtx.try_lock()) {
-                        std::fwrite(hostBuffer, sizeof(char), hostBufferPos, stderr);
-                        hostBufferPos = 0;
+                    auto hasParameterChanges = !parameterChanges.empty();
+                    if ((hostBufferPos > 0 || hasParameterChanges) && mtx.try_lock()) {
+                        if (hostBufferPos > 0) {
+                            std::fwrite(hostBuffer, sizeof(char), hostBufferPos, stderr);
+                            hostBufferPos = 0;
+                        }
+                        if (hasParameterChanges) writeAllParameterChanges();
                         mtx.unlock();
                     }
                     processor->processBlock(buffer, buf);
@@ -189,9 +193,8 @@ public:
 
     void audioProcessorParameterChanged(juce::AudioProcessor*, int parameterIndex, float newValue) override {
         if (!mtx.try_lock()) return;
-        writeToHostBuffer((char)3);
-        writeToHostBuffer(parameterIndex);
-        writeToHostBuffer(newValue);
+        auto time = juce::Time::getApproximateMillisecondCounter() + 500;
+        if (!parameterChanges.try_emplace(parameterIndex, newValue, time).second) parameterChanges[parameterIndex].second = time;
         mtx.unlock();
     }
     
@@ -204,6 +207,7 @@ private:
     std::unique_ptr<PluginWindow> window;
     std::unique_ptr<juce::AudioPluginInstance> processor;
     juce::AudioPlayHead::PositionInfo positionInfo;
+	std::unordered_map<int, std::pair<float, juce::uint32>> parameterChanges;
     bool isRealtime = true;
     int sampleRate = 48000, bufferSize = 1024, ppq = 96;
     volatile int hostBufferPos = 0;
@@ -225,6 +229,17 @@ private:
         juce::MemoryBlock memory;
         stream.readIntoMemoryBlock(memory);
         processor->setStateInformation(memory.getData(), (int)memory.getSize());
+    }
+
+    void writeAllParameterChanges() {
+        auto time = juce::Time::getApproximateMillisecondCounter();
+        for (auto it = parameterChanges.begin(); it != parameterChanges.end(); it++) {
+			if (it->second.second > time) continue;
+            writeCerr((char)3);
+            writeCerr(it->first);
+            writeCerr(it->second.first);
+            parameterChanges.erase(it);
+        }
     }
 
     template <typename T> inline void writeToHostBuffer(T var) {
