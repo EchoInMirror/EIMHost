@@ -1,4 +1,4 @@
-# EIM
+# EIMHost [![Release](https://github.com/EchoInMirror/EIMHost/actions/workflows/release.yml/badge.svg)](https://github.com/EchoInMirror/EIMHost/actions/workflows/release.yml)
 
 ## Usage
 
@@ -11,6 +11,9 @@ EIMHost --load <plugin_description> [--handle [window_handle] --preset [preset_f
 
 # Open native audio device
 EIMHost --output [device_name] [--type [device_type] --bufferSize [buffer_size] --sampleRate [sample_rate]]
+
+# List all native audio devices
+EIMHost --output --all
 ```
 
 ## Build
