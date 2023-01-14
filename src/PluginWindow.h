@@ -35,11 +35,13 @@ public:
 	}
 
 	void moved() override {
+		juce::ResizableWindow::moved();
 		_x = getX();
 		_y = getY();
 	}
 
 	void resized() override {
+		juce::ResizableWindow::resized();
 		_width = getWidth();
 		_height = getHeight();
 	}

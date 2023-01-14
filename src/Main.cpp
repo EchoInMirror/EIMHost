@@ -20,23 +20,26 @@ juce::AudioDeviceManager::AudioDeviceSetup setup;
 
 template <typename T> inline void write(T var) { std::fwrite(&var, sizeof(var), 1, stdout); }
 template <typename T> inline void writeCerr(T var) { std::fwrite(&var, sizeof(var), 1, stderr); }
-void writeError(juce::String str, FILE* file) {
-    write((char)127);
+void writeString(juce::String str, FILE* file = stdout) {
     write(str.length());
     std::fwrite(str.toRawUTF8(), sizeof(char), str.length(), file);
     fflush(file);
+}
+void writeError(juce::String str, FILE* file) {
+    write((char)127);
+    writeString(str, file);
     (file == stderr ? std::cout : std::cerr) << str << '\n';
 }
 std::string readString() {
-	int len;
-	READ(len);
-	char* str = new char[len + 1];
-	std::fread(str, sizeof(char), len, stdin);
+    int len;
+    READ(len);
+    char* str = new char[len + 1];
+    std::fread(str, sizeof(char), len, stdin);
     str[len] = '\0';
-	return str;
+    return str;
 }
 
-class EIMPluginHost : public juce::JUCEApplication, public juce::AudioPlayHead, private juce::Thread {
+class EIMPluginHost : public juce::JUCEApplication, public juce::AudioPlayHead, public juce::AudioProcessorListener, private juce::Thread {
 public:
     EIMPluginHost(): juce::AudioPlayHead(), juce::Thread("IO Thread") { }
 
@@ -61,7 +64,8 @@ public:
             return;
         }
         processor->setPlayHead(this);
-		if (args->containsOption("-P|--preset")) loadState(args->getValueForOption("-P|--preset"));
+        processor->addListener(this);
+        if (args->containsOption("-P|--preset")) loadState(args->getValueForOption("-P|--preset"));
 
         freopen(nullptr, "rb", stdin);
         freopen(nullptr, "wb", stderr);
@@ -107,27 +111,31 @@ public:
                     double timeInSeconds = (double)timeInSamples / sampleRate;
                     juce::MessageManagerLock mml(Thread::getCurrentThread());
                     if (!mml.lockWasGained()) return;
-					auto _isRealtime = (flags & FLAGS_IS_REALTIME) != 0;
+                    auto _isRealtime = (flags & FLAGS_IS_REALTIME) != 0;
                     if (isRealtime != _isRealtime) {
                         processor->setNonRealtime(!_isRealtime);
                         isRealtime = _isRealtime;
                     }
                     positionInfo.setIsPlaying((flags & FLAGS_IS_PLAYING) != 0);
-					positionInfo.setIsLooping((flags & FLAGS_IS_LOOPING) != 0);
-					positionInfo.setIsRecording((flags & FLAGS_IS_RECORDING) != 0);
+                    positionInfo.setIsLooping((flags & FLAGS_IS_LOOPING) != 0);
+                    positionInfo.setIsRecording((flags & FLAGS_IS_RECORDING) != 0);
                     positionInfo.setBpm(bpm);
                     positionInfo.setTimeInSamples(timeInSamples);
                     positionInfo.setTimeInSeconds(timeInSeconds);
                     positionInfo.setPpqPosition(timeInSeconds / 60.0 * bpm);
                     for (int i = 0; i < numInputChannels; i++) std::fread(buffer.getWritePointer(i), sizeof(float), bufferSize, stdin);
                     juce::MidiBuffer buf;
-					for (int i = 0; i < midiEvents; i++) {
+                    for (int i = 0; i < midiEvents; i++) {
                         int data;
                         short time;
-						READ(data);
-						READ(time);
-						buf.addEvent(juce::MidiMessage(data & 0xFF, (data >> 8) & 0xFF, (data >> 16) & 0xFF), time);
-					}
+                        READ(data);
+                        READ(time);
+                        buf.addEvent(juce::MidiMessage(data & 0xFF, (data >> 8) & 0xFF, (data >> 16) & 0xFF), time);
+                    }
+                    if (hostBufferPos > 0 && mtx.try_lock()) {
+                        std::fwrite(hostBuffer, sizeof(char), hostBufferPos, stderr);
+                        hostBufferPos = 0;
+                    }
                     processor->processBlock(buffer, buf);
                     writeCerr((char) 1);
                     for (int i = 0; i < numOutputChannels; i++) std::fwrite(buffer.getReadPointer(i), sizeof(float), bufferSize, stderr);
@@ -145,7 +153,7 @@ public:
                     juce::MessageManagerLock mml(Thread::getCurrentThread());
                     if (!mml.lockWasGained()) return;
                     juce::MemoryBlock memory;
-					processor->getStateInformation(memory);
+                    processor->getStateInformation(memory);
                     juce::File(readString()).replaceWithData(memory.getData(), memory.getSize());
                     break;
                 }
@@ -171,6 +179,22 @@ public:
 
     static juce::JUCEApplicationBase* createInstance() { return new EIMPluginHost(); }
 
+    bool canControlTransport() override { return true; }
+    
+    virtual void transportPlay(bool shouldStartPlaying) override {
+        writeToHostBuffer((char)2);
+        writeToHostBuffer((char)shouldStartPlaying);
+    }
+
+    void audioProcessorParameterChanged(juce::AudioProcessor*, int parameterIndex, float newValue) override {
+        writeToHostBuffer((char)3);
+        writeToHostBuffer(parameterIndex);
+        writeToHostBuffer(newValue);
+    }
+    
+    void audioProcessorChanged(juce::AudioProcessor*, const ChangeDetails&) override {
+    }
+
 private:
     juce::MidiBuffer midiBuffer;
     juce::AudioBuffer<float> buffer;
@@ -178,10 +202,13 @@ private:
     std::unique_ptr<juce::AudioPluginInstance> processor;
     juce::AudioPlayHead::PositionInfo positionInfo;
     bool isRealtime = true;
-    int sampleRate = 44800, bufferSize = 1024, ppq = 96;
+    int sampleRate = 48000, bufferSize = 1024, ppq = 96;
+    volatile int hostBufferPos = 0;
+    char hostBuffer[8192];
+    std::mutex mtx;
 
     void createEditorWindow() {
-		if (!processor->hasEditor()) return;
+        if (!processor->hasEditor()) return;
         auto component = processor->createEditorIfNeeded();
         if (!component) return;
         window.reset(new PluginWindow("[EIMHost] " + processor->getName() + " (" +
@@ -191,10 +218,18 @@ private:
     }
 
     void loadState(juce::String file) {
-		juce::FileInputStream stream(file);
+        juce::FileInputStream stream(file);
         juce::MemoryBlock memory;
         stream.readIntoMemoryBlock(memory);
         processor->setStateInformation(memory.getData(), (int)memory.getSize());
+    }
+
+    template <typename T> inline void writeToHostBuffer(T var) {
+        T* p = reinterpret_cast<T*>(&var);
+        if (mtx.try_lock()) {
+            for (int i = 0; i < sizeof(T); i++) hostBuffer[hostBufferPos++] = ((char*)p)[i];
+            mtx.unlock();
+        }
     }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EIMPluginHost)
@@ -225,7 +260,13 @@ public:
     }
 
     void audioDeviceAboutToStart(juce::AudioIODevice* device) override {
-        std::cerr << "Device started: " << device->getName() << ", " << device->getOutputLatencyInSamples() << '\n';
+        write((char)1);
+        writeString("[" + device->getTypeName() + "] " + device->getName());
+        write(device->getInputLatencyInSamples());
+        write(device->getOutputLatencyInSamples());
+        write((float)device->getCurrentSampleRate());
+        write(device->getCurrentBufferSizeSamples());
+        std::cerr << "Device started: " << device->getName() << '\n';
     }
 
     void audioDeviceStopped() override { }
@@ -254,7 +295,7 @@ int main(int argc, char* argv[]) {
             puts(juce::JSON::toString(paths).toRawUTF8());
             return 0;
 #else
-			std::cerr << "No any file specified.\n";
+            std::cerr << "No any file specified.\n";
             return -1;
 #endif
         }
@@ -295,21 +336,29 @@ int main(int argc, char* argv[]) {
         juce::JUCEApplicationBase::main(argc, (const char**)argv);
         juce::shutdownJuce_GUI();
     } else if (args->containsOption("-O|--output")) {
-        auto deviceType = args->getValueForOption("-T|--type");
-        auto deviceName = args->getValueForOption("-O|--output");
-        setup.bufferSize = args->containsOption("-B|--bufferSize") ? args->getValueForOption("-B|--bufferSize").getIntValue() : 1024;
-        setup.sampleRate = args->containsOption("-R|--sampleRate") ? args->getValueForOption("-R|--sampleRate").getIntValue() : 44800;
-
 #ifdef JUCE_WINDOWS
         CoInitialize(nullptr);
 #endif
 
         juce::AudioDeviceManager deviceManager;
+        if (args->containsOption("-A|--all")) {
+            for (auto& it : deviceManager.getAvailableDeviceTypes()) {
+                it->scanForDevices();
+                for (auto& j : it->getDeviceNames()) {
+                    std::cout << "[" << it->getTypeName() << "] " << j << "$EIM$";
+                }
+            }
+            fflush(stdout);
+            return 0;
+        }
+        auto deviceType = args->getValueForOption("-T|--type");
+        auto deviceName = args->getValueForOption("-O|--output");
+        setup.bufferSize = args->containsOption("-B|--bufferSize") ? args->getValueForOption("-B|--bufferSize").getIntValue() : 1024;
+        setup.sampleRate = args->containsOption("-R|--sampleRate") ? args->getValueForOption("-R|--sampleRate").getIntValue() : 48000;
+
         AudioCallback audioCallback(deviceManager);
         for (auto& it : deviceManager.getAvailableDeviceTypes()) {
             if (deviceType == it->getTypeName()) it->scanForDevices();
-            /*std::cerr << it->getTypeName() << "\n";
-            for (auto& j : it->getDeviceNames()) std::cerr << "    " << j << "\n";*/
         }
         if (deviceType.isNotEmpty()) deviceManager.setCurrentAudioDeviceType(deviceType, true);
         if (deviceName.isNotEmpty()) setup.outputDeviceName = setup.inputDeviceName = deviceName;

@@ -4,7 +4,7 @@ const patchs = {
   'JUCE/modules/juce_gui_basics/native/juce_win32_Windowing.cpp': {
     from: 'hwnd = CreateWindowEx',
     to: 'hwnd = parentToAddTo != nullptr && (styleFlags & (1 << 28)) ? CreateWindow(WindowClassHolder::getInstance()->getWindowClassName(), L"",\
-WS_OVERLAPPED | WS_SYSMENU | WS_CAPTION | WS_MINIMIZEBOX | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | ((type & windowIsResizable) ? WS_MAXIMIZEBOX | WS_THICKFRAME : 0),\
+WS_OVERLAPPED | WS_SYSMENU | WS_CAPTION | WS_MINIMIZEBOX | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | ((styleFlags & windowIsResizable) ? WS_MAXIMIZEBOX | WS_THICKFRAME : 0),\
 0, 0, 0, 0, parentToAddTo, nullptr, (HINSTANCE)Process::getCurrentModuleInstanceHandle(), nullptr) : CreateWindowEx'
   },
   'JUCE/modules/juce_audio_devices/audio_io/juce_AudioDeviceManager.cpp': {
