@@ -21,8 +21,10 @@ juce::AudioDeviceManager::AudioDeviceSetup setup;
 template <typename T> inline void write(T var) { std::fwrite(&var, sizeof(var), 1, stdout); }
 template <typename T> inline void writeCerr(T var) { std::fwrite(&var, sizeof(var), 1, stderr); }
 void writeString(juce::String str, FILE* file = stdout) {
-    write(str.length());
-    std::fwrite(str.toRawUTF8(), sizeof(char), str.length(), file);
+    auto raw = str.toRawUTF8();
+    auto len = strlen(raw);
+    write((int)len);
+    std::fwrite(raw, sizeof(char), len, file);
     fflush(file);
 }
 void writeError(juce::String str, FILE* file) {
@@ -49,8 +51,10 @@ public:
 
     void initialise(const juce::String&) override {
         writeCerr((short)0x0102);
+        fflush(stderr);
         juce::PluginDescription desc;
-        auto json = juce::JSON::fromString(args->getValueForOption("-L|--load"));
+        auto jsonStr = args->getValueForOption("-L|--load");
+        auto json = juce::JSON::fromString(jsonStr == "#" ? readString() : jsonStr);
         desc.name = json.getProperty("name", "").toString();
         desc.pluginFormatName = json.getProperty("pluginFormatName", "").toString();
         desc.fileOrIdentifier = json.getProperty("fileOrIdentifier", "").toString();
@@ -259,38 +263,79 @@ public:
         fflush(stdout);
         char id;
         if (std::fread(&id, 1, 1, stdin) != 1) {
-            lock.signal();
+            exit();
             return;
         }
         switch (id) {
-        case 0:
-        {
+        case 0: {
             char numOutputChannels;
             READ(numOutputChannels);
             for (int i = 0; i < numOutputChannels; i++) std::fread(outputChannelData[i], sizeof(float), setup.bufferSize, stdin);
             break;
         }
-        default: lock.signal();
+        case 1:
+            openControlPanel();
+            break;
+        default: exit();
         }
     }
 
-    void audioDeviceAboutToStart(juce::AudioIODevice* device) override {
+    void audioDeviceAboutToStart(juce::AudioIODevice* d) override {
+        /*if (isOpenControlPanel) {
+            isOpenControlPanel = false;
+            return;
+        }*/
         write((char)1);
-        writeString("[" + device->getTypeName() + "] " + device->getName());
-        write(device->getInputLatencyInSamples());
-        write(device->getOutputLatencyInSamples());
-        write((float)device->getCurrentSampleRate());
-        write(device->getCurrentBufferSizeSamples());
-        std::cerr << "Device started: " << device->getName() << '\n';
+        writeString("[" + d->getTypeName() + "] " + d->getName());
+        write(d->getInputLatencyInSamples());
+        write(d->getOutputLatencyInSamples());
+        write((int)d->getCurrentSampleRate());
+        write(d->getCurrentBufferSizeSamples());
+        auto sampleRates = d->getAvailableSampleRates();
+        write(sampleRates.size());
+        for (auto it : sampleRates) write((int)it);
+        auto bufferSizes = d->getAvailableBufferSizes();
+        write(bufferSizes.size());
+        for (auto it : bufferSizes) write(it);
+        write((char)d->hasControlPanel());
+        fflush(stdout);
     }
 
-    void audioDeviceStopped() override { }
+    void audioDeviceStopped() override {
+        exit();
+    }
 
-    void audioDeviceError(const juce::String& errorMessage) override { std::cerr << errorMessage << '\n'; }
+    void audioDeviceError(const juce::String& errorMessage) override {
+        std::cerr << errorMessage << '\n';
+        isErrorExit = true;
+        exit();
+    }
 
-    void waitDeviceClose() { lock.wait(); }
+    void openControlPanel() {
+        juce::MessageManager::callAsync([this] {
+            auto device = deviceManager.getCurrentAudioDevice();
+            if (device && device->hasControlPanel()) {
+                juce::Component modalWindow;
+                modalWindow.setOpaque(true);
+                modalWindow.addToDesktop(0);
+                modalWindow.enterModalState();
+                modalWindow.toFront(true);
+                if (device->showControlPanel()) {
+                    deviceManager.closeAudioDevice();
+                    // deviceManager.restartLastAudioDevice();
+                }
+            }
+        });
+    }
+
+    int getExitCode() { return isErrorExit; }
+
+    void exit() {
+        juce::MessageManager::getInstance()->stopDispatchLoop();
+    }
+
 private:
-    juce::WaitableEvent lock;
+    bool isErrorExit = false, isOpenControlPanel = false;
     juce::AudioDeviceManager& deviceManager;
 };
 
@@ -299,6 +344,9 @@ int main(int argc, char* argv[]) {
     std::cin.tie(0);
     std::cout.tie(0);
     std::cerr.tie(0);
+    setvbuf(stdin, nullptr, _IOFBF, 4096);
+    setvbuf(stdout, nullptr, _IOFBF, 4096);
+    setvbuf(stderr, nullptr, _IOFBF, 4096);
     args = new juce::ArgumentList(argc, argv);
 
     if (args->containsOption("-S|--scan")) {
@@ -370,22 +418,27 @@ int main(int argc, char* argv[]) {
         auto deviceName = args->getValueForOption("-O|--output");
         setup.bufferSize = args->containsOption("-B|--bufferSize") ? args->getValueForOption("-B|--bufferSize").getIntValue() : 1024;
         setup.sampleRate = args->containsOption("-R|--sampleRate") ? args->getValueForOption("-R|--sampleRate").getIntValue() : 48000;
+        
+        write((short)0x0102);
+        fflush(stdout);
+        
+        if (deviceName == "#") deviceName = readString();
 
         AudioCallback audioCallback(deviceManager);
         for (auto& it : deviceManager.getAvailableDeviceTypes()) {
             if (deviceType == it->getTypeName()) it->scanForDevices();
         }
         if (deviceType.isNotEmpty()) deviceManager.setCurrentAudioDeviceType(deviceType, true);
-        if (deviceName.isNotEmpty()) setup.outputDeviceName = setup.inputDeviceName = deviceName;
+        if (deviceName.isNotEmpty() && deviceName != "#") setup.outputDeviceName = deviceName;
+        juce::initialiseJuce_GUI();
         auto error = deviceManager.initialise(0, 2, nullptr, true, "", &setup);
         if (error.isNotEmpty()) {
             writeError(error, stdout);
+            juce::shutdownJuce_GUI();
             return 1;
         }
-        deviceManager.addAudioCallback(&audioCallback);
 
-        write((short)0x0102);
-        fflush(stdout);
+        deviceManager.addAudioCallback(&audioCallback);
 
         freopen(nullptr, "rb", stdin);
         freopen(nullptr, "wb", stdout);
@@ -393,8 +446,10 @@ int main(int argc, char* argv[]) {
         _setmode(_fileno(stdin), _O_BINARY);
         _setmode(_fileno(stdout), _O_BINARY);
 #endif
-        audioCallback.waitDeviceClose();
+        juce::MessageManager::getInstance()->runDispatchLoop();
         deviceManager.closeAudioDevice();
+        juce::shutdownJuce_GUI();
+		return audioCallback.getExitCode();
     }
     return 0;
 }
