@@ -18,18 +18,18 @@ juce::ArgumentList* args;
 juce::AudioPluginFormatManager manager;
 juce::AudioDeviceManager::AudioDeviceSetup setup;
 
-template <typename T> inline void write(T var) { std::fwrite(&var, sizeof(var), 1, stdout); }
-template <typename T> inline void writeCerr(T var) { std::fwrite(&var, sizeof(var), 1, stderr); }
+template <typename T> inline void write(T var) { std::fwrite(&var, sizeof(T), 1, stdout); }
+template <typename T> inline void writeCerr(T var) { std::fwrite(&var, sizeof(T), 1, stderr); }
 void writeString(juce::String str, FILE* file = stdout) {
     auto raw = str.toRawUTF8();
-    auto len = strlen(raw);
-    write((int)len);
+    auto len = (int)strlen(raw);
+    std::fwrite(&len, sizeof(int), 1, file);
     std::fwrite(raw, sizeof(char), len, file);
-    fflush(file);
 }
 void writeError(juce::String str, FILE* file) {
     write((char)127);
     writeString(str, file);
+    fflush(file);
     (file == stderr ? std::cout : std::cerr) << str << '\n';
 }
 std::string readString() {
@@ -196,7 +196,8 @@ public:
     }
 
     void audioProcessorParameterChanged(juce::AudioProcessor*, int parameterIndex, float newValue) override {
-        if (!mtx.try_lock()) return;
+        if (prevParameterChanges[parameterIndex] == newValue || !mtx.try_lock()) return;
+        prevParameterChanges[parameterIndex] = newValue;
         auto time = juce::Time::getApproximateMillisecondCounter() + 500;
         if (!parameterChanges.try_emplace(parameterIndex, newValue, time).second) parameterChanges[parameterIndex].second = time;
         mtx.unlock();
@@ -212,6 +213,7 @@ private:
     std::unique_ptr<juce::AudioPluginInstance> processor;
     juce::AudioPlayHead::PositionInfo positionInfo;
 	std::unordered_map<int, std::pair<float, juce::uint32>> parameterChanges;
+    std::unordered_map<int, float> prevParameterChanges;
     bool isRealtime = true;
     int sampleRate = 48000, bufferSize = 1024, ppq = 96;
     volatile int hostBufferPos = 0;
@@ -259,8 +261,8 @@ public:
     AudioCallback(juce::AudioDeviceManager& deviceManager): deviceManager(deviceManager) {}
 
     void audioDeviceIOCallbackWithContext(const float* const*, int, float* const* outputChannelData, int, int, const juce::AudioIODeviceCallbackContext&) override {
-        write((char)0);
-        fflush(stdout);
+        writeCerr((char)0);
+        fflush(stderr);
         char id;
         if (std::fread(&id, 1, 1, stdin) != 1) {
             exit();
@@ -276,37 +278,50 @@ public:
         case 1:
             openControlPanel();
             break;
+        case 2: {
+            isRestarting = true;
+            deviceManager.closeAudioDevice();
+            std::thread restartingThread([this] {
+                char id2;
+                do {
+                    if (std::fread(&id2, 1, 1, stdin) != 1) {
+                        exit();
+                        return;
+                    }
+                    deviceManager.restartLastAudioDevice();
+                } while (id2 != 3);
+            });
+            restartingThread.detach();
+            break;
+        }
         default: exit();
         }
     }
 
-    void audioDeviceAboutToStart(juce::AudioIODevice* d) override {
-        /*if (isOpenControlPanel) {
-            isOpenControlPanel = false;
-            return;
-        }*/
-        write((char)1);
-        writeString("[" + d->getTypeName() + "] " + d->getName());
-        write(d->getInputLatencyInSamples());
-        write(d->getOutputLatencyInSamples());
-        write((int)d->getCurrentSampleRate());
-        write(d->getCurrentBufferSizeSamples());
-        auto sampleRates = d->getAvailableSampleRates();
-        write(sampleRates.size());
-        for (auto it : sampleRates) write((int)it);
-        auto bufferSizes = d->getAvailableBufferSizes();
-        write(bufferSizes.size());
-        for (auto it : bufferSizes) write(it);
-        write((char)d->hasControlPanel());
-        fflush(stdout);
+    void audioDeviceAboutToStart(juce::AudioIODevice* device) override {
+        writeCerr((char)1);
+        writeString("[" + device->getTypeName() + "] " + device->getName(), stderr);
+        writeCerr(device->getInputLatencyInSamples());
+        writeCerr(device->getOutputLatencyInSamples());
+        writeCerr((int)device->getCurrentSampleRate());
+        writeCerr(device->getCurrentBufferSizeSamples());
+        auto sampleRates = device->getAvailableSampleRates();
+        writeCerr(sampleRates.size());
+        for (auto it : sampleRates) writeCerr((int)it);
+        auto bufferSizes = device->getAvailableBufferSizes();
+        writeCerr(bufferSizes.size());
+		for (int it : bufferSizes) writeCerr(it);
+        writeCerr((char)device->hasControlPanel());
+        fflush(stderr);
     }
 
     void audioDeviceStopped() override {
-        exit();
+        if (isRestarting) isRestarting = false;
+        else exit();
     }
 
     void audioDeviceError(const juce::String& errorMessage) override {
-        std::cerr << errorMessage << '\n';
+        std::cout << errorMessage << '\n';
         isErrorExit = true;
         exit();
     }
@@ -321,8 +336,9 @@ public:
                 modalWindow.enterModalState();
                 modalWindow.toFront(true);
                 if (device->showControlPanel()) {
+                    isRestarting = true;
                     deviceManager.closeAudioDevice();
-                    // deviceManager.restartLastAudioDevice();
+                    deviceManager.restartLastAudioDevice();
                 }
             }
         });
@@ -335,7 +351,7 @@ public:
     }
 
 private:
-    bool isErrorExit = false, isOpenControlPanel = false;
+    bool isErrorExit = false, isRestarting = false;
     juce::AudioDeviceManager& deviceManager;
 };
 
@@ -418,9 +434,16 @@ int main(int argc, char* argv[]) {
         auto deviceName = args->getValueForOption("-O|--output");
         setup.bufferSize = args->containsOption("-B|--bufferSize") ? args->getValueForOption("-B|--bufferSize").getIntValue() : 1024;
         setup.sampleRate = args->containsOption("-R|--sampleRate") ? args->getValueForOption("-R|--sampleRate").getIntValue() : 48000;
+
+        freopen(nullptr, "rb", stdin);
+        freopen(nullptr, "wb", stderr);
+#ifdef JUCE_WINDOWS
+        _setmode(_fileno(stdin), _O_BINARY);
+        _setmode(_fileno(stderr), _O_BINARY);
+#endif
         
-        write((short)0x0102);
-        fflush(stdout);
+        writeCerr((short)0x0102);
+        fflush(stderr);
         
         if (deviceName == "#") deviceName = readString();
 
@@ -433,19 +456,13 @@ int main(int argc, char* argv[]) {
         juce::initialiseJuce_GUI();
         auto error = deviceManager.initialise(0, 2, nullptr, true, "", &setup);
         if (error.isNotEmpty()) {
-            writeError(error, stdout);
+            writeError(error, stderr);
             juce::shutdownJuce_GUI();
             return 1;
         }
 
         deviceManager.addAudioCallback(&audioCallback);
 
-        freopen(nullptr, "rb", stdin);
-        freopen(nullptr, "wb", stdout);
-#ifdef JUCE_WINDOWS
-        _setmode(_fileno(stdin), _O_BINARY);
-        _setmode(_fileno(stdout), _O_BINARY);
-#endif
         juce::MessageManager::getInstance()->runDispatchLoop();
         deviceManager.closeAudioDevice();
         juce::shutdownJuce_GUI();
