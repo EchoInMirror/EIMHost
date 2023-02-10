@@ -467,6 +467,28 @@ int main(int argc, char* argv[]) {
         deviceManager.closeAudioDevice();
         juce::shutdownJuce_GUI();
 		return audioCallback.getExitCode();
+    } else {
+#ifdef JUCE_WINDOWS
+        auto javaFile = "java.exe";
+#elif
+        auto javaFile = "java";
+#endif
+        juce::File file(juce::String("./jbr/bin/") + javaFile);
+        if (file.exists()) {
+            juce::File vmoptions("./.vmoptions");
+            juce::StringArray arr;
+            if (vmoptions.exists()) {
+                vmoptions.readLines(arr);
+            }
+            arr.insert(0, file.getFullPathName());
+            arr.add("-jar");
+            arr.add("EchoInMirror.jar");
+            juce::ChildProcess process;
+            process.start(arr);
+        } else {
+            std::cout << "Cannot find java!\n";
+            fflush(stdout);
+        }
     }
     return 0;
 }
