@@ -3,6 +3,7 @@
 #pragma warning(disable: 6029)
 
 #include "PluginWindow.h"
+#include <jshm.h>
 #include <io.h>
 #include <fcntl.h>
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -44,6 +45,9 @@ std::string readString() {
 class EIMPluginHost : public juce::JUCEApplication, public juce::AudioPlayHead, public juce::AudioProcessorListener, private juce::Thread {
 public:
     EIMPluginHost(): juce::AudioPlayHead(), juce::Thread("IO Thread") { }
+    ~EIMPluginHost() {
+        shm.reset();
+    }
 
     const juce::String getApplicationName() override { return "EIMPluginHost"; }
     const juce::String getApplicationVersion() override { return "0.0.0"; }
@@ -92,11 +96,33 @@ public:
         while (!threadShouldExit() && std::fread(&id, 1, 1, stdin) == 1) {
             switch (id) {
                 case 0: {
+                    char enabledSharedMemory;
                     READ(sampleRate);
                     READ(bufferSize);
+                    READ(enabledSharedMemory);
                     juce::MessageManagerLock mml(Thread::getCurrentThread());
                     if (!mml.lockWasGained()) return;
-                    buffer.setSize(juce::jmax(processor->getTotalNumInputChannels(), processor->getTotalNumOutputChannels()), bufferSize);
+                    auto channels = juce::jmax(processor->getTotalNumInputChannels(), processor->getTotalNumOutputChannels());
+                    bool setInnerBuffer = true;
+                    if (enabledSharedMemory) {
+                        int shmSize;
+                        READ(shmSize);
+                        if (!shm || shmSize) {
+                            shm.reset();
+                            auto shmName = args->getValueForOption("-M|--memory");
+                            if (shmName.isNotEmpty()) {
+                                shm.reset(jshm::shared_memory::open(shmName.toRawUTF8(), shmSize));
+                                if (shm) {
+                                    auto buffers = new float* [channels];
+                                    for (int i = 0; i < channels; i++) buffers[i] = reinterpret_cast<float*>(shm->address()) + i * bufferSize;
+                                    buffer = juce::AudioBuffer<float>(buffers, channels, bufferSize);
+                                    delete[] buffers;
+                                    setInnerBuffer = false;
+                                }
+                            }
+                        } else setInnerBuffer = false;
+					}
+                    if (setInnerBuffer) buffer = juce::AudioBuffer<float>(channels, bufferSize);
                     processor->prepareToPlay(sampleRate, bufferSize);
                     break;
                 }
@@ -209,6 +235,7 @@ public:
 private:
     juce::MidiBuffer midiBuffer;
     juce::AudioBuffer<float> buffer;
+    std::unique_ptr<jshm::shared_memory> shm;
     std::unique_ptr<PluginWindow> window;
     std::unique_ptr<juce::AudioPluginInstance> processor;
     juce::AudioPlayHead::PositionInfo positionInfo;
@@ -258,7 +285,15 @@ private:
 
 class AudioCallback : public juce::AudioIODeviceCallback {
 public:
-    AudioCallback(juce::AudioDeviceManager& deviceManager): deviceManager(deviceManager) {}
+    AudioCallback(juce::AudioDeviceManager& deviceManager, juce::String shmName, int memorySize): deviceManager(deviceManager) {
+        if (shmName.isNotEmpty()) {
+			shm.reset(jshm::shared_memory::open(shmName.toRawUTF8(), memorySize));
+			if (!shm) exit();
+        }
+    }
+    ~AudioCallback() {
+        shm.reset();
+    }
 
     void audioDeviceIOCallbackWithContext(const float* const*, int, float* const* outputChannelData, int, int, const juce::AudioIODeviceCallbackContext&) override {
         writeCerr((char)0);
@@ -272,7 +307,11 @@ public:
         case 0: {
             char numOutputChannels;
             READ(numOutputChannels);
-            for (int i = 0; i < numOutputChannels; i++) std::fread(outputChannelData[i], sizeof(float), setup.bufferSize, stdin);
+			if (shm) {
+                auto inData = reinterpret_cast<float*>(shm->address());
+                for (int i = 0; i < numOutputChannels; i++)
+                    std::memcpy(outputChannelData[i], inData + i * setup.bufferSize, setup.bufferSize * sizeof(float));
+			} else for (int i = 0; i < numOutputChannels; i++) std::fread(outputChannelData[i], sizeof(float), setup.bufferSize, stdin);
             break;
         }
         case 1:
@@ -299,20 +338,25 @@ public:
     }
 
     void audioDeviceAboutToStart(juce::AudioIODevice* device) override {
+        auto bufSize = device->getCurrentBufferSizeSamples();
+        auto bufferSizes = device->getAvailableBufferSizes();
+        auto sampleRates = device->getAvailableSampleRates();
         writeCerr((char)1);
         writeString("[" + device->getTypeName() + "] " + device->getName(), stderr);
         writeCerr(device->getInputLatencyInSamples());
         writeCerr(device->getOutputLatencyInSamples());
         writeCerr((int)device->getCurrentSampleRate());
-        writeCerr(device->getCurrentBufferSizeSamples());
-        auto sampleRates = device->getAvailableSampleRates();
+        writeCerr(bufSize);
         writeCerr(sampleRates.size());
         for (auto it : sampleRates) writeCerr((int)it);
-        auto bufferSizes = device->getAvailableBufferSizes();
         writeCerr(bufferSizes.size());
 		for (int it : bufferSizes) writeCerr(it);
         writeCerr((char)device->hasControlPanel());
         fflush(stderr);
+        int outBufferSize;
+        READ(outBufferSize);
+        if (setup.bufferSize != bufSize) setup.bufferSize = bufSize;
+        if (shm && outBufferSize) shm.reset(jshm::shared_memory::open(shm->name(), outBufferSize));
     }
 
     void audioDeviceStopped() override {
@@ -351,6 +395,7 @@ public:
     }
 
 private:
+    std::unique_ptr<jshm::shared_memory> shm;
     bool isErrorExit = false, isRestarting = false;
     juce::AudioDeviceManager& deviceManager;
 };
@@ -446,8 +491,10 @@ int main(int argc, char* argv[]) {
         fflush(stderr);
         
         if (deviceName == "#") deviceName = readString();
-
-        AudioCallback audioCallback(deviceManager);
+        
+        auto memorySize = args->getValueForOption("-MS|--memory-size");
+        AudioCallback audioCallback(deviceManager, args->getValueForOption("-M|--memory"),
+            memorySize.isEmpty() ? 0 : memorySize.getIntValue());
         for (auto& it : deviceManager.getAvailableDeviceTypes()) {
             if (deviceType == it->getTypeName()) it->scanForDevices();
         }
@@ -477,9 +524,7 @@ int main(int argc, char* argv[]) {
         if (file.exists()) {
             juce::File vmoptions("./.vmoptions");
             juce::StringArray arr;
-            if (vmoptions.exists()) {
-                vmoptions.readLines(arr);
-            }
+            if (vmoptions.exists()) vmoptions.readLines(arr);
             arr.insert(0, file.getFullPathName());
             arr.add("-jar");
             arr.add("EchoInMirror.jar");

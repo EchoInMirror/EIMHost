@@ -7,17 +7,19 @@ add_definitions(-DJUCE_USE_MP3AUDIOFORMAT -DJUCE_PLUGINHOST_VST3 -DJUCE_PLUGINHO
 
 file(GLOB EIM_SRC_FILES "src/*.cpp" "src/*.h")
 
+add_subdirectory(JavaSharedMemory)
+
 add_subdirectory(JUCE)
-juce_add_console_app(EIMHost
+juce_add_console_app(${PROJECT_NAME}
     VERSION "1.0.0"
-    PRODUCT_NAME "EIMHost"
+    PRODUCT_NAME ${PROJECT_NAME}
     COMPANY_NAME "Echo In Mirror"
     ICON_SMALL "resources/logo128.png"
     ICON_BIG "resources/logo512.png"
 )
-_juce_configure_bundle(EIMHost EIMHost)
-_juce_add_resources_rc(EIMHost EIMHost)
-target_sources(EIMHost PRIVATE ${EIM_SRC_FILES})
+_juce_configure_bundle(${PROJECT_NAME} ${PROJECT_NAME})
+_juce_add_resources_rc(${PROJECT_NAME} ${PROJECT_NAME})
+target_sources(${PROJECT_NAME} PRIVATE ${EIM_SRC_FILES})
 
 if(MSVC)
     set(thirdpartyPath ${CMAKE_CURRENT_BINARY_DIR}/thirdparty)
@@ -49,20 +51,21 @@ if(MSVC)
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
     string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHa")
-    set_property(TARGET EIMHost PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    set_property(TARGET ${PROJECT_NAME} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif(MSVC)
 
-target_compile_definitions(EIMHost
+target_compile_definitions(${PROJECT_NAME}
     PRIVATE
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:EIMHost,JUCE_PRODUCT_NAME>"
         JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:EIMHost,JUCE_VERSION>")
 
-target_link_libraries(EIMHost
+target_link_libraries(${PROJECT_NAME}
     PRIVATE
         juce::juce_gui_extra
         juce::juce_audio_utils
+        java_shared_memory
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
