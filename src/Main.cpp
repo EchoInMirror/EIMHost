@@ -73,7 +73,10 @@ public:
         }
         processor->setPlayHead(this);
         processor->addListener(this);
-        if (args->containsOption("-P|--preset")) loadState(args->getValueForOption("-P|--preset"));
+        if (args->containsOption("-P|--preset")) {
+            auto preset = args->getValueForOption("-P|--preset");
+            loadState(preset == "#" ? readString() : preset);
+        }
 
         freopen(nullptr, "rb", stdin);
         freopen(nullptr, "wb", stderr);
