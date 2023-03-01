@@ -425,7 +425,11 @@ int main(int argc, char* argv[]) {
             std::cerr << "No any file specified.\n";
             return -1;
 #endif
-        } else if (id == "#") id = readString();
+        } else if (id == "#") {
+            std::string str;
+            std::cin >> str;
+            id = str;
+        }
         juce::initialiseJuce_GUI();
         juce::OwnedArray<juce::PluginDescription> results;
         for (auto it : manager.getFormats()) it->findAllTypesForFile(results, id);
