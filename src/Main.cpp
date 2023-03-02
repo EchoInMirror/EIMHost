@@ -427,7 +427,12 @@ int main(int argc, char* argv[]) {
 #endif
         } else if (id == "#") {
             std::string str;
-            std::cin >> str;
+            char add = ' ';
+            while(add != 0)
+            {
+                std::cin.get(add);
+                str.append(1, add);
+            }
             id = str;
         }
         juce::initialiseJuce_GUI();
