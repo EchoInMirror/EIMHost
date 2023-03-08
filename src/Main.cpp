@@ -527,7 +527,7 @@ int main(int argc, char* argv[]) {
 #elif
         auto javaFile = "java";
 #endif
-        juce::File file(juce::String("./jbr/bin/") + javaFile);
+        juce::File file(juce::String("./jre/bin/") + javaFile);
         if (file.exists()) {
             juce::File vmoptions("./.vmoptions");
             juce::StringArray arr;
