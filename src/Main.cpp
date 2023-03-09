@@ -427,7 +427,7 @@ int main(int argc, char* argv[]) {
 #endif
         } else if (id == "#") {
             char path[512];
-			std::cin.getline(path, 512);
+			std::cin.getline(path, 512, 0);
 			id = path;
         }
         juce::initialiseJuce_GUI();
