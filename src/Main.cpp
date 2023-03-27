@@ -275,7 +275,10 @@ private:
             writeCerr(it->first);
             writeCerr(it->second.first);
         }
-        parameterChanges.clear();
+        std::erase_if(parameterChanges, [time](const decltype(parameterChanges)::value_type node)
+        {
+            return node.second.second <= time;
+        });
     }
 
     template <typename T> inline void writeToHostBuffer(T var) {
