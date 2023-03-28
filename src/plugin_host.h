@@ -126,11 +126,11 @@ namespace eim {
                         buf.addEvent(juce::MidiMessage(data & 0xFF, (data >> 8) & 0xFF, (data >> 16) & 0xFF), time);
                     }
                     for (int i = 0; i < numParameters; i++) {
-                        int id;
+                        int pid;
                         float value;
-                        streams::in.readVarInt(id);
+                        streams::in.readVarInt(pid);
                         streams::in >> value;
-                        processor->setParameter(id, value);
+                        if (auto* param = parameters[pid]) param->setValue(value);
                     }
                     auto hasParameterChanges = !parameterChanges.empty();
                     if ((hostBufferPos > 0 || hasParameterChanges) && mtx.try_lock()) {
@@ -211,6 +211,7 @@ namespace eim {
         std::unique_ptr<PluginWindow> window;
         std::unique_ptr<juce::AudioPluginInstance> processor;
         juce::AudioPlayHead::PositionInfo positionInfo;
+        juce::Array<juce::AudioProcessorParameter*> parameters;
         std::unordered_map<int, std::pair<float, juce::uint32>> parameterChanges;
         std::unordered_map<int, float> prevParameterChanges;
         bool isRealtime = true;
@@ -237,7 +238,7 @@ namespace eim {
         }
 
         void writeInitInformation() {
-            auto& parameters = processor->getParameters();
+            parameters = processor->getParameters();
             streams::out.writeAction(0);
             streams::out << (juce::int8)processor->getTotalNumInputChannels()
                 << (juce::int8)processor->getTotalNumOutputChannels();
@@ -249,7 +250,7 @@ namespace eim {
                 if (p->isBoolean()) flags |= PARAMETER_IS_BOOLEAN;
                 if (p->isMetaParameter()) flags |= PARAMETER_IS_META;
                 if (p->isOrientationInverted()) flags |= PARAMETER_IS_ORIENTATION_INVERTED;
-                streams::out << flags << p->getDefaultValue() << (int)p->getCategory() << p->getNumSteps()
+                streams::out << flags << p->getDefaultValue() << (int)p->getCategory()
                     << p->getName(1024) << p->getLabel() << p->getAllValueStrings();
             }
             streams::out.flush();

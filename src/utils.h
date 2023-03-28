@@ -32,11 +32,16 @@ namespace eim {
                 writeVarInt(var.size());
                 for (auto& str : var) write(str);
             }
+            void write(juce::StringArray var) {
+                writeVarInt(var.size());
+                for (auto& str : var) write(str);
+            }
             template <typename T> void writeArray(T* var, int len) { std::fwrite(var, sizeof(T), len, stderr); }
             template <typename T> output_stream& operator<<(T var) { write(var); return *this; }
             output_stream& operator<<(bool var) { write(var); return *this; }
             output_stream& operator<<(juce::String var) { write(var); return *this; }
             output_stream& operator<<(juce::Array<juce::String> var) { write(var); return *this; }
+            output_stream& operator<<(juce::StringArray var) { write(var); return *this; }
 
             void writeVarInt(juce::int32 var) {
                 while (var >= 0x80) {
@@ -53,6 +58,10 @@ namespace eim {
                 write((char)var);
             }
             void write(juce::String str) {
+				if (str.isEmpty()) {
+					writeVarInt(0);
+					return;
+				}
                 auto raw = str.toRawUTF8();
                 auto len = (int)strlen(raw);
                 writeVarInt(len);
@@ -95,13 +104,13 @@ namespace eim {
             input_stream& operator>>(std::string& var) { var = readString(); return *this; }
 
             void readVarInt(juce::int32& var) {
-                var = 0;
-                for (int i = 0; i < 32; i += 7) {
-                    char b;
-                    read(b);
-                    var |= (juce::int32)(b & 0x7F) << i;
-                    if ((b & 0x80) == 0) return;
-                }
+				var = 0;
+				for (int i = 0; i <= 28; i += 7) {
+					char b;
+					read(b);
+					var |= (juce::int32)(b & 0x7F) << i;
+					if ((b & 0x80) == 0) return;
+				}
             }
             void readVarLong(juce::int64& var) {
                 var = 0;
@@ -114,7 +123,8 @@ namespace eim {
             }
             std::string readString() {
                 int len;
-                read(len);
+                readVarInt(len);
+				if (len == 0) return "";
                 char* str = new char[len + 1];
                 std::fread(str, sizeof(char), len, stdin);
                 str[len] = '\0';
