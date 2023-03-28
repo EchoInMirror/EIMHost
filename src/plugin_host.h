@@ -54,7 +54,7 @@ namespace eim {
             }
 
             createEditorWindow();
-            writeInitInfomation();
+            writeInitInformation();
 
             startThread();
         }
@@ -96,8 +96,8 @@ namespace eim {
                     double bpm;
                     juce::int8 numInputChannels, numOutputChannels = 0, flags;
                     juce::int64 timeInSamples;
-                    juce::int16 midiEvents;
-                    streams::in >> flags >> bpm >> midiEvents;
+                    juce::int16 numMidiEvents, numParameters;
+                    streams::in >> flags >> bpm >> numMidiEvents >> numParameters;
                     streams::in.readVarLong(timeInSamples);
                     
                     double timeInSeconds = (double)timeInSamples / sampleRate;
@@ -119,11 +119,18 @@ namespace eim {
                         for (int i = 0; i < numInputChannels; i++) streams::in.readArray(buffer.getWritePointer(i), bufferSize);
                     }
                     juce::MidiBuffer buf;
-                    for (int i = 0; i < midiEvents; i++) {
+                    for (int i = 0; i < numMidiEvents; i++) {
                         int data;
                         short time;
                         streams::in >> data >> time;
                         buf.addEvent(juce::MidiMessage(data & 0xFF, (data >> 8) & 0xFF, (data >> 16) & 0xFF), time);
+                    }
+                    for (int i = 0; i < numParameters; i++) {
+                        int id;
+                        float value;
+                        streams::in.readVarInt(id);
+                        streams::in >> value;
+                        processor->setParameter(id, value);
                     }
                     auto hasParameterChanges = !parameterChanges.empty();
                     if ((hostBufferPos > 0 || hasParameterChanges) && mtx.try_lock()) {
@@ -229,21 +236,21 @@ namespace eim {
             processor->setStateInformation(memory.getData(), (int)memory.getSize());
         }
 
-        void writeInitInfomation() {
+        void writeInitInformation() {
             auto& parameters = processor->getParameters();
             streams::out.writeAction(0);
-			streams::out << (juce::int8)processor->getTotalNumInputChannels()
+            streams::out << (juce::int8)processor->getTotalNumInputChannels()
                 << (juce::int8)processor->getTotalNumOutputChannels();
             streams::out.writeVarInt(parameters.size());
             for (auto p : parameters) {
                 juce::int8 flags = 0;
-				if (p->isAutomatable()) flags |= PARAMETER_IS_AUTOMATABLE;
-				if (p->isDiscrete()) flags |= PARAMETER_IS_DISCRETE;
-				if (p->isBoolean()) flags |= PARAMETER_IS_BOOLEAN;
-				if (p->isMetaParameter()) flags |= PARAMETER_IS_META;
-				if (p->isOrientationInverted()) flags |= PARAMETER_IS_ORIENTATION_INVERTED;
+                if (p->isAutomatable()) flags |= PARAMETER_IS_AUTOMATABLE;
+                if (p->isDiscrete()) flags |= PARAMETER_IS_DISCRETE;
+                if (p->isBoolean()) flags |= PARAMETER_IS_BOOLEAN;
+                if (p->isMetaParameter()) flags |= PARAMETER_IS_META;
+                if (p->isOrientationInverted()) flags |= PARAMETER_IS_ORIENTATION_INVERTED;
                 streams::out << flags << p->getDefaultValue() << (int)p->getCategory() << p->getNumSteps()
-                    << p->getName(256) << p->getLabel() << p->getAllValueStrings();
+                    << p->getName(1024) << p->getLabel() << p->getAllValueStrings();
             }
             streams::out.flush();
         }

@@ -24,8 +24,8 @@ int main(int argc, char* argv[]) {
 #endif
         } else if (id == "#") {
             char path[512];
-			std::cin.getline(path, 512, 0);
-			id = path;
+            std::cin.getline(path, 512, 0);
+            id = path;
         }
         juce::initialiseJuce_GUI();
         juce::OwnedArray<juce::PluginDescription> results;
@@ -110,7 +110,7 @@ int main(int argc, char* argv[]) {
         juce::MessageManager::getInstance()->runDispatchLoop();
         deviceManager.closeAudioDevice();
         juce::shutdownJuce_GUI();
-		return audioCallback.getExitCode();
+        return audioCallback.getExitCode();
     } else {
 #ifdef JUCE_WINDOWS
         auto javaFile = "java.exe";
