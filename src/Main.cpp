@@ -1,422 +1,16 @@
-#pragma warning(disable: 6031)
-#pragma warning(disable: 6387)
-#pragma warning(disable: 6029)
-
-#include "PluginWindow.h"
-#include <jshm.h>
-#include <io.h>
-#include <fcntl.h>
-#include <juce_audio_devices/juce_audio_devices.h>
-#include <juce_audio_utils/juce_audio_utils.h>
-
-#define FLAGS_IS_PLAYING   0b0001
-#define FLAGS_IS_LOOPING   0b0010
-#define FLAGS_IS_RECORDING 0b0100
-#define FLAGS_IS_REALTIME  0b1000
-#define READ(var) std::fread(&var, sizeof(var), 1, stdin)
-
-juce::ArgumentList* args;
-juce::AudioPluginFormatManager manager;
-juce::AudioDeviceManager::AudioDeviceSetup setup;
-
-template <typename T> inline void write(T var) { std::fwrite(&var, sizeof(T), 1, stdout); }
-template <typename T> inline void writeCerr(T var) { std::fwrite(&var, sizeof(T), 1, stderr); }
-void writeString(juce::String str, FILE* file = stdout) {
-    auto raw = str.toRawUTF8();
-    auto len = (int)strlen(raw);
-    std::fwrite(&len, sizeof(int), 1, file);
-    std::fwrite(raw, sizeof(char), len, file);
-}
-void writeError(juce::String str, FILE* file) {
-    write((char)127);
-    writeString(str, file);
-    fflush(file);
-    (file == stderr ? std::cout : std::cerr) << str << '\n';
-}
-std::string readString() {
-    int len;
-    READ(len);
-    char* str = new char[len + 1];
-    std::fread(str, sizeof(char), len, stdin);
-    str[len] = '\0';
-    return str;
-}
-
-class EIMPluginHost : public juce::JUCEApplication, public juce::AudioPlayHead, public juce::AudioProcessorListener, private juce::Thread {
-public:
-    EIMPluginHost(): juce::AudioPlayHead(), juce::Thread("IO Thread") { }
-    ~EIMPluginHost() {
-        shm.reset();
-    }
-
-    const juce::String getApplicationName() override { return "EIMPluginHost"; }
-    const juce::String getApplicationVersion() override { return "0.0.0"; }
-    bool moreThanOneInstanceAllowed() override { return true; }
-
-    void initialise(const juce::String&) override {
-        writeCerr((short)0x0102);
-        fflush(stderr);
-        juce::PluginDescription desc;
-        auto jsonStr = args->getValueForOption("-L|--load");
-        auto json = juce::JSON::fromString(jsonStr == "#" ? readString() : jsonStr);
-        desc.name = json.getProperty("name", "").toString();
-        desc.pluginFormatName = json.getProperty("pluginFormatName", "").toString();
-        desc.fileOrIdentifier = json.getProperty("fileOrIdentifier", "").toString();
-        desc.uniqueId = (int)json.getProperty("uniqueId", 0);
-        desc.deprecatedUid = (int)json.getProperty("deprecatedUid", 0);
-        juce::String error;
-        processor = manager.createPluginInstance(desc, sampleRate, bufferSize, error);
-        if (error.isNotEmpty()) {
-            writeError(error, stderr);
-            quit();
-            return;
-        }
-        processor->setPlayHead(this);
-        processor->addListener(this);
-        if (args->containsOption("-P|--preset")) {
-            auto preset = args->getValueForOption("-P|--preset");
-            loadState(preset == "#" ? readString() : preset);
-        }
-
-        freopen(nullptr, "rb", stdin);
-        freopen(nullptr, "wb", stderr);
-#ifdef JUCE_WINDOWS
-        _setmode(_fileno(stdin), _O_BINARY);
-        _setmode(_fileno(stderr), _O_BINARY);
-#endif
-
-        createEditorWindow();
-
-        writeCerr((char) 0);
-        writeCerr(processor->getTotalNumInputChannels());
-        writeCerr(processor->getTotalNumOutputChannels());
-        fflush(stderr);
-        startThread(Priority::highest);
-    }
-
-    void run() override {
-        char id;
-        while (!threadShouldExit() && std::fread(&id, 1, 1, stdin) == 1) {
-            switch (id) {
-                case 0: {
-                    char enabledSharedMemory;
-                    READ(sampleRate);
-                    READ(bufferSize);
-                    READ(enabledSharedMemory);
-                    juce::MessageManagerLock mml(Thread::getCurrentThread());
-                    if (!mml.lockWasGained()) return;
-                    auto channels = juce::jmax(processor->getTotalNumInputChannels(), processor->getTotalNumOutputChannels());
-                    bool setInnerBuffer = true;
-                    if (enabledSharedMemory) {
-                        int shmSize;
-                        READ(shmSize);
-                        if (!shm || shmSize) {
-                            shm.reset();
-                            auto shmName = args->getValueForOption("-M|--memory");
-                            if (shmName.isNotEmpty()) {
-                                shm.reset(jshm::shared_memory::open(shmName.toRawUTF8(), shmSize));
-                                if (shm) {
-                                    auto buffers = new float* [channels];
-                                    for (int i = 0; i < channels; i++) buffers[i] = reinterpret_cast<float*>(shm->address()) + i * bufferSize;
-                                    buffer = juce::AudioBuffer<float>(buffers, channels, bufferSize);
-                                    delete[] buffers;
-                                    setInnerBuffer = false;
-                                }
-                            }
-                        } else setInnerBuffer = false;
-					}
-                    if (setInnerBuffer) buffer = juce::AudioBuffer<float>(channels, bufferSize);
-                    processor->prepareToPlay(sampleRate, bufferSize);
-                    break;
-                }
-                case 1: {
-                    double bpm;
-                    long long timeInSamples;
-                    short midiEvents;
-                    char numInputChannels, numOutputChannels;
-                    char flags;
-                    READ(flags);
-                    READ(bpm);
-                    READ(timeInSamples);
-                    READ(numInputChannels);
-                    READ(numOutputChannels);
-                    READ(midiEvents);
-                    double timeInSeconds = (double)timeInSamples / sampleRate;
-                    auto _isRealtime = (flags & FLAGS_IS_REALTIME) != 0;
-                    if (isRealtime != _isRealtime) {
-                        processor->setNonRealtime(!_isRealtime);
-                        isRealtime = _isRealtime;
-                    }
-                    positionInfo.setIsPlaying((flags & FLAGS_IS_PLAYING) != 0);
-                    positionInfo.setIsLooping((flags & FLAGS_IS_LOOPING) != 0);
-                    positionInfo.setIsRecording((flags & FLAGS_IS_RECORDING) != 0);
-                    positionInfo.setBpm(bpm);
-                    positionInfo.setTimeInSamples(timeInSamples);
-                    positionInfo.setTimeInSeconds(timeInSeconds);
-                    positionInfo.setPpqPosition(timeInSeconds / 60.0 * bpm);
-                    for (int i = 0; i < numInputChannels; i++) std::fread(buffer.getWritePointer(i), sizeof(float), bufferSize, stdin);
-                    juce::MidiBuffer buf;
-                    for (int i = 0; i < midiEvents; i++) {
-                        int data;
-                        short time;
-                        READ(data);
-                        READ(time);
-                        buf.addEvent(juce::MidiMessage(data & 0xFF, (data >> 8) & 0xFF, (data >> 16) & 0xFF), time);
-                    }
-                    auto hasParameterChanges = !parameterChanges.empty();
-                    if ((hostBufferPos > 0 || hasParameterChanges) && mtx.try_lock()) {
-                        if (hostBufferPos > 0) {
-                            std::fwrite(hostBuffer, sizeof(char), hostBufferPos, stderr);
-                            hostBufferPos = 0;
-                        }
-                        if (hasParameterChanges) writeAllParameterChanges();
-                        mtx.unlock();
-                    }
-                    processor->processBlock(buffer, buf);
-                    writeCerr((char) 1);
-                    for (int i = 0; i < numOutputChannels; i++) std::fwrite(buffer.getReadPointer(i), sizeof(float), bufferSize, stderr);
-                    fflush(stderr);
-                    break;
-                }
-                case 2: {
-                    juce::MessageManager::callAsync([this] {
-                        if (window == nullptr) createEditorWindow();
-                        else window.reset(nullptr);
-                    });
-                    break;
-                }
-                case 3: {
-                    juce::MessageManagerLock mml(Thread::getCurrentThread());
-                    if (!mml.lockWasGained()) return;
-                    juce::MemoryBlock memory;
-                    processor->getStateInformation(memory);
-                    juce::File(readString()).replaceWithData(memory.getData(), memory.getSize());
-                    break;
-                }
-                case 4: {
-                    juce::MessageManagerLock mml(Thread::getCurrentThread());
-                    if (!mml.lockWasGained()) return;
-                    loadState(readString());
-                    break;
-                }
-            }
-        }
-        quit();
-    }
-
-    void shutdown() override {
-        window = nullptr;
-        processor = nullptr;
-    }
-
-    void anotherInstanceStarted(const juce::String &) override { }
-
-    juce::Optional<juce::AudioPlayHead::PositionInfo> getPosition() const override { return positionInfo; }
-
-    static juce::JUCEApplicationBase* createInstance() { return new EIMPluginHost(); }
-
-    bool canControlTransport() override { return true; }
-    
-    virtual void transportPlay(bool shouldStartPlaying) override {
-        if (!mtx.try_lock()) return;
-        writeToHostBuffer((char)2);
-        writeToHostBuffer((char)shouldStartPlaying);
-        mtx.unlock();
-    }
-
-    void audioProcessorParameterChanged(juce::AudioProcessor*, int parameterIndex, float newValue) override {
-        if (prevParameterChanges[parameterIndex] == newValue || !mtx.try_lock()) return;
-        prevParameterChanges[parameterIndex] = newValue;
-        auto time = juce::Time::getApproximateMillisecondCounter() + 500;
-        if (!parameterChanges.try_emplace(parameterIndex, newValue, time).second) parameterChanges[parameterIndex].second = time;
-        mtx.unlock();
-    }
-    
-    void audioProcessorChanged(juce::AudioProcessor*, const ChangeDetails&) override {
-    }
-
-private:
-    juce::MidiBuffer midiBuffer;
-    juce::AudioBuffer<float> buffer;
-    std::unique_ptr<jshm::shared_memory> shm;
-    std::unique_ptr<PluginWindow> window;
-    std::unique_ptr<juce::AudioPluginInstance> processor;
-    juce::AudioPlayHead::PositionInfo positionInfo;
-	std::unordered_map<int, std::pair<float, juce::uint32>> parameterChanges;
-    std::unordered_map<int, float> prevParameterChanges;
-    bool isRealtime = true;
-    int sampleRate = 48000, bufferSize = 1024, ppq = 96;
-    volatile int hostBufferPos = 0;
-    char hostBuffer[8192];
-    std::mutex mtx;
-
-    void createEditorWindow() {
-        if (!processor->hasEditor()) return;
-        auto component = processor->createEditorIfNeeded();
-        if (!component) return;
-        window.reset(new PluginWindow("[EIMHost] " + processor->getName() + " (" +
-            processor->getPluginDescription().pluginFormatName + ")", component, window,
-            processor->wrapperType != juce::AudioProcessor::wrapperType_VST,
-            args->containsOption("-H|--handle") ? args->getValueForOption("-H|--handle").getLargeIntValue() : 0));
-    }
-
-    void loadState(juce::String file) {
-        juce::FileInputStream stream(file);
-        juce::MemoryBlock memory;
-        stream.readIntoMemoryBlock(memory);
-        processor->setStateInformation(memory.getData(), (int)memory.getSize());
-    }
-
-    void writeAllParameterChanges() {
-        auto time = juce::Time::getApproximateMillisecondCounter();
-        for (auto it = parameterChanges.begin(); it != parameterChanges.end(); ++it) {
-			if (it->second.second > time) continue;
-            writeCerr((char)3);
-            writeCerr(it->first);
-            writeCerr(it->second.first);
-        }
-        std::erase_if(parameterChanges, [time](const decltype(parameterChanges)::value_type node)
-        {
-            return node.second.second <= time;
-        });
-    }
-
-    template <typename T> inline void writeToHostBuffer(T var) {
-        T* p = reinterpret_cast<T*>(&var);
-        for (int i = 0; i < sizeof(T); i++) hostBuffer[hostBufferPos++] = ((char*)p)[i];
-    }
-
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EIMPluginHost)
-};
-
-class AudioCallback : public juce::AudioIODeviceCallback {
-public:
-    AudioCallback(juce::AudioDeviceManager& deviceManager, juce::String shmName, int memorySize): deviceManager(deviceManager) {
-        if (shmName.isNotEmpty()) {
-			shm.reset(jshm::shared_memory::open(shmName.toRawUTF8(), memorySize));
-			if (!shm) exit();
-        }
-    }
-    ~AudioCallback() {
-        shm.reset();
-    }
-
-    void audioDeviceIOCallbackWithContext(const float* const*, int, float* const* outputChannelData, int, int, const juce::AudioIODeviceCallbackContext&) override {
-        writeCerr((char)0);
-        fflush(stderr);
-        char id;
-        if (std::fread(&id, 1, 1, stdin) != 1) {
-            exit();
-            return;
-        }
-        switch (id) {
-        case 0: {
-            char numOutputChannels;
-            READ(numOutputChannels);
-			if (shm) {
-                auto inData = reinterpret_cast<float*>(shm->address());
-                for (int i = 0; i < numOutputChannels; i++)
-                    std::memcpy(outputChannelData[i], inData + i * setup.bufferSize, setup.bufferSize * sizeof(float));
-			} else for (int i = 0; i < numOutputChannels; i++) std::fread(outputChannelData[i], sizeof(float), setup.bufferSize, stdin);
-            break;
-        }
-        case 1:
-            openControlPanel();
-            break;
-        case 2: {
-            isRestarting = true;
-            deviceManager.closeAudioDevice();
-            std::thread restartingThread([this] {
-                char id2;
-                do {
-                    if (std::fread(&id2, 1, 1, stdin) != 1) {
-                        exit();
-                        return;
-                    }
-                    deviceManager.restartLastAudioDevice();
-                } while (id2 != 3);
-            });
-            restartingThread.detach();
-            break;
-        }
-        default: exit();
-        }
-    }
-
-    void audioDeviceAboutToStart(juce::AudioIODevice* device) override {
-        auto bufSize = device->getCurrentBufferSizeSamples();
-        auto bufferSizes = device->getAvailableBufferSizes();
-        auto sampleRates = device->getAvailableSampleRates();
-        writeCerr((char)1);
-        writeString("[" + device->getTypeName() + "] " + device->getName(), stderr);
-        writeCerr(device->getInputLatencyInSamples());
-        writeCerr(device->getOutputLatencyInSamples());
-        writeCerr((int)device->getCurrentSampleRate());
-        writeCerr(bufSize);
-        writeCerr(sampleRates.size());
-        for (auto it : sampleRates) writeCerr((int)it);
-        writeCerr(bufferSizes.size());
-		for (int it : bufferSizes) writeCerr(it);
-        writeCerr((char)device->hasControlPanel());
-        fflush(stderr);
-        int outBufferSize;
-        READ(outBufferSize);
-        if (setup.bufferSize != bufSize) setup.bufferSize = bufSize;
-        if (shm && outBufferSize) shm.reset(jshm::shared_memory::open(shm->name(), outBufferSize));
-    }
-
-    void audioDeviceStopped() override {
-        if (isRestarting) isRestarting = false;
-        else exit();
-    }
-
-    void audioDeviceError(const juce::String& errorMessage) override {
-        std::cout << errorMessage << '\n';
-        isErrorExit = true;
-        exit();
-    }
-
-    void openControlPanel() {
-        juce::MessageManager::callAsync([this] {
-            auto device = deviceManager.getCurrentAudioDevice();
-            if (device && device->hasControlPanel()) {
-                juce::Component modalWindow;
-                modalWindow.setOpaque(true);
-                modalWindow.addToDesktop(0);
-                modalWindow.enterModalState();
-                modalWindow.toFront(true);
-                if (device->showControlPanel()) {
-                    isRestarting = true;
-                    deviceManager.closeAudioDevice();
-                    deviceManager.restartLastAudioDevice();
-                }
-            }
-        });
-    }
-
-    int getExitCode() { return isErrorExit; }
-
-    void exit() {
-        juce::MessageManager::getInstance()->stopDispatchLoop();
-    }
-
-private:
-    std::unique_ptr<jshm::shared_memory> shm;
-    bool isErrorExit = false, isRestarting = false;
-    juce::AudioDeviceManager& deviceManager;
-};
+#include "plugin_host.h"
+#include "audio_output.h"
 
 int main(int argc, char* argv[]) {
     std::ios::sync_with_stdio(false);
     std::cin.tie(0);
     std::cout.tie(0);
     std::cerr.tie(0);
-    setvbuf(stdin, nullptr, _IOFBF, 4096);
-    setvbuf(stdout, nullptr, _IOFBF, 4096);
-    setvbuf(stderr, nullptr, _IOFBF, 4096);
-    args = new juce::ArgumentList(argc, argv);
+    auto args = new juce::ArgumentList(argc, argv);
+    eim::args = args;
 
-    if (args->containsOption("-S|--scan")) {
+    if (eim::args->containsOption("-S|--scan")) {
+        juce::AudioPluginFormatManager manager;
         manager.addDefaultFormats();
         auto id = args->getValueForOption("-S|--scan");
         if (id.isEmpty()) {
@@ -465,8 +59,7 @@ int main(int argc, char* argv[]) {
         juce::shutdownJuce_GUI();
     } else if (args->containsOption("-L|--load")) {
         juce::initialiseJuce_GUI();
-        manager.addDefaultFormats();
-        juce::JUCEApplicationBase::createInstance = EIMPluginHost::createInstance;
+        juce::JUCEApplicationBase::createInstance = eim::plugin_host::createInstance;
         juce::JUCEApplicationBase::main(argc, (const char**)argv);
         juce::shutdownJuce_GUI();
     } else if (args->containsOption("-O|--output")) {
@@ -479,31 +72,25 @@ int main(int argc, char* argv[]) {
             for (auto& it : deviceManager.getAvailableDeviceTypes()) {
                 it->scanForDevices();
                 for (auto& j : it->getDeviceNames()) {
-                    std::cout << "[" << it->getTypeName() << "] " << j << "$EIM$";
+                    std::cerr << "[" << it->getTypeName() << "] " << j << "$EIM$";
                 }
             }
-            fflush(stdout);
+            fflush(stderr);
             return 0;
         }
         auto deviceType = args->getValueForOption("-T|--type");
         auto deviceName = args->getValueForOption("-O|--output");
+
+        juce::AudioDeviceManager::AudioDeviceSetup setup;
         setup.bufferSize = args->containsOption("-B|--bufferSize") ? args->getValueForOption("-B|--bufferSize").getIntValue() : 1024;
         setup.sampleRate = args->containsOption("-R|--sampleRate") ? args->getValueForOption("-R|--sampleRate").getIntValue() : 48000;
-
-        freopen(nullptr, "rb", stdin);
-        freopen(nullptr, "wb", stderr);
-#ifdef JUCE_WINDOWS
-        _setmode(_fileno(stdin), _O_BINARY);
-        _setmode(_fileno(stderr), _O_BINARY);
-#endif
         
-        writeCerr((short)0x0102);
-        fflush(stderr);
+        eim::streams::out.writeByteOrderMessage();
         
-        if (deviceName == "#") deviceName = readString();
+        if (deviceName == "#") deviceName = eim::streams::in.readString();
         
         auto memorySize = args->getValueForOption("-MS|--memory-size");
-        AudioCallback audioCallback(deviceManager, args->getValueForOption("-M|--memory"),
+        eim::audio_output audioCallback(deviceManager, setup, args->getValueForOption("-M|--memory"),
             memorySize.isEmpty() ? 0 : memorySize.getIntValue());
         for (auto& it : deviceManager.getAvailableDeviceTypes()) {
             if (deviceType == it->getTypeName()) it->scanForDevices();
@@ -513,7 +100,7 @@ int main(int argc, char* argv[]) {
         juce::initialiseJuce_GUI();
         auto error = deviceManager.initialise(0, 2, nullptr, true, "", &setup);
         if (error.isNotEmpty()) {
-            writeError(error, stderr);
+            eim::streams::out.writeError(error);
             juce::shutdownJuce_GUI();
             return 1;
         }
