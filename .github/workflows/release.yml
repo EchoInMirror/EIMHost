@@ -117,7 +117,7 @@ jobs:
         run: |
           mkdir build
           cd build
-          sudo apt-get install ninja-build libasound2-dev ladspa-sdk libx11-dev libxext-dev libxcomposite-dev
+          sudo apt-get install ninja-build libasound2-dev ladspa-sdk libx11-dev libxcomposite-dev libxext-dev libxrandr-dev libxrender-dev
           cmake -G Ninja ..
           cmake --build . --config MinSizeRel
 
