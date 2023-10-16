@@ -28,7 +28,7 @@ if(MSVC)
 endif(MSVC)
 
 target_sources(${PROJECT_NAME} PRIVATE ${EIM_SRC_FILES})
-target_compile_definitions(${PROJECT_NAME} PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_USE_FREETYPE=0)
+target_compile_definitions(${PROJECT_NAME} PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 
 if(MSVC)
     set(thirdpartyPath ${CMAKE_CURRENT_BINARY_DIR}/thirdparty)
