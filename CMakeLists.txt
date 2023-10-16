@@ -1,9 +1,13 @@
-cmake_minimum_required(VERSION 3.22)
+cmake_minimum_required(VERSION 3.15)
 project(EIMHost VERSION 1.0.0)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 set(CMAKE_CXX_STANDARD 23)
-add_definitions(-DJUCE_USE_MP3AUDIOFORMAT -DJUCE_PLUGINHOST_VST3 -DJUCE_PLUGINHOST_VST -DJUCE_PLUGINHOST_AU -DJUCE_ASIO)
+add_definitions(-DJUCE_USE_MP3AUDIOFORMAT -DJUCE_PLUGINHOST_VST3 -DJUCE_PLUGINHOST_AU)
+
+if(MSVC)
+    add_definitions(-DJUCE_PLUGINHOST_VST -DJUCE_ASIO)
+endif(MSVC)
 
 file(GLOB EIM_SRC_FILES "src/*.cpp" "src/*.h")
 
@@ -13,13 +17,18 @@ add_subdirectory(JUCE)
 juce_add_console_app(${PROJECT_NAME}
     VERSION "1.0.0"
     PRODUCT_NAME ${PROJECT_NAME}
-    COMPANY_NAME "Echo In Mirror"
+    COMPANY_NAME "EchoInMirror"
     ICON_SMALL "resources/logo128.png"
     ICON_BIG "resources/logo512.png"
 )
-_juce_configure_bundle(${PROJECT_NAME} ${PROJECT_NAME})
-_juce_add_resources_rc(${PROJECT_NAME} ${PROJECT_NAME})
+
+if(MSVC)
+    _juce_configure_bundle(${PROJECT_NAME} ${PROJECT_NAME})
+    _juce_add_resources_rc(${PROJECT_NAME} ${PROJECT_NAME})
+endif(MSVC)
+
 target_sources(${PROJECT_NAME} PRIVATE ${EIM_SRC_FILES})
+target_compile_definitions(${PROJECT_NAME} PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 
 if(MSVC)
     set(thirdpartyPath ${CMAKE_CURRENT_BINARY_DIR}/thirdparty)

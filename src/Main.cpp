@@ -3,9 +3,9 @@
 
 int main(int argc, char* argv[]) {
     std::ios::sync_with_stdio(false);
-    std::cin.tie(0);
-    std::cout.tie(0);
-    std::cerr.tie(0);
+    std::cin.tie(nullptr);
+    std::cout.tie(nullptr);
+    std::cerr.tie(nullptr);
     auto args = new juce::ArgumentList(argc, argv);
     eim::args = args;
 
@@ -114,7 +114,7 @@ int main(int argc, char* argv[]) {
     } else {
 #ifdef JUCE_WINDOWS
         auto javaFile = "java.exe";
-#elif
+#else
         auto javaFile = "java";
 #endif
         juce::File file(juce::String("./jre/bin/") + javaFile);

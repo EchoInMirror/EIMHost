@@ -2,3 +2,5 @@ build
 vcpkg_installed
 .idea
 .DS_Store
+cmake-build-debug
+cmake-build-minsizerel

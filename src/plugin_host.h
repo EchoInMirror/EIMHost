@@ -18,7 +18,7 @@ namespace eim {
     class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, public juce::AudioProcessorListener, private juce::Thread {
     public:
         plugin_host() : juce::AudioPlayHead(), juce::Thread("IO Thread") { }
-        ~plugin_host() {
+        ~plugin_host() override {
             shm.reset();
         }
 
@@ -79,7 +79,7 @@ namespace eim {
                             if (shmName.isNotEmpty()) {
                                 shm.reset(jshm::shared_memory::open(shmName.toRawUTF8(), shmSize));
                                 if (shm) {
-                                    auto buffers = new float* [channels];
+                                    auto buffers = new float* [(unsigned long)channels];
                                     for (int i = 0; i < channels; i++) buffers[i] = reinterpret_cast<float*>(shm->address()) + i * bufferSize;
                                     buffer = juce::AudioBuffer<float>(buffers, channels, bufferSize);
                                     delete[] buffers;
@@ -116,7 +116,8 @@ namespace eim {
                     
                     if (!shm) {
                         streams::in >> numInputChannels >> numOutputChannels;
-                        for (int i = 0; i < numInputChannels; i++) streams::in.readArray(buffer.getWritePointer(i), bufferSize);
+                        for (int i = 0; i < numInputChannels; i++)
+                            streams::in.readArray(buffer.getWritePointer(i), bufferSize);
                     }
                     juce::MidiBuffer buf;
                     for (int i = 0; i < numMidiEvents; i++) {
@@ -145,7 +146,7 @@ namespace eim {
                     
                     streams::out.writeAction(1);
                     if (!shm) for (int i = 0; i < numOutputChannels; i++) streams::out.writeArray(buffer.getReadPointer(i), bufferSize);
-                    streams::out.flush();
+                    eim::streams::output_stream::flush();
                     break;
                 }
                 case 2: {
@@ -169,6 +170,7 @@ namespace eim {
                     loadState(streams::in.readString());
                     break;
                 }
+                default:; // unknown command
                 }
             }
             quit();
@@ -187,7 +189,7 @@ namespace eim {
 
         bool canControlTransport() override { return true; }
 
-        virtual void transportPlay(bool shouldStartPlaying) override {
+        void transportPlay(bool shouldStartPlaying) override {
             if (!mtx.try_lock()) return;
             writeToHostBuffer((char)2);
             writeToHostBuffer((char)shouldStartPlaying);
@@ -195,7 +197,7 @@ namespace eim {
         }
 
         void audioProcessorParameterChanged(juce::AudioProcessor*, int parameterIndex, float newValue) override {
-            if (prevParameterChanges[parameterIndex] == newValue || !mtx.try_lock()) return;
+            if (juce::approximatelyEqual(prevParameterChanges[parameterIndex], newValue) || !mtx.try_lock()) return;
             prevParameterChanges[parameterIndex] = newValue;
             auto time = juce::Time::getApproximateMillisecondCounter() + 500;
             if (!parameterChanges.try_emplace(parameterIndex, newValue, time).second) parameterChanges[parameterIndex].second = time;
@@ -215,8 +217,8 @@ namespace eim {
         std::unordered_map<int, std::pair<float, juce::uint32>> parameterChanges;
         std::unordered_map<int, float> prevParameterChanges;
         bool isRealtime = true;
-        int sampleRate = 48000, bufferSize = 1024, ppq = 96;
-        volatile int hostBufferPos = 0;
+        int sampleRate = 48000, bufferSize = 1024;
+        int hostBufferPos = 0;
         juce::int8 hostBuffer[8192] = {0};
         std::mutex mtx;
 
@@ -224,13 +226,13 @@ namespace eim {
             if (!processor->hasEditor()) return;
             auto component = processor->createEditorIfNeeded();
             if (!component) return;
-            window.reset(new PluginWindow("[EIMHost] " + processor->getName() + " (" +
+            window = std::make_unique<PluginWindow>("[EIMHost] " + processor->getName() + " (" +
                 processor->getPluginDescription().pluginFormatName + ")", component, window,
                 processor->wrapperType != juce::AudioProcessor::wrapperType_VST,
-                args->containsOption("-H|--handle") ? args->getValueForOption("-H|--handle").getLargeIntValue() : 0));
+                args->containsOption("-H|--handle") ? args->getValueForOption("-H|--handle").getLargeIntValue() : 0);
         }
 
-        void loadState(juce::String file) {
+        void loadState(const juce::String& file) {
             juce::FileInputStream stream(file);
             juce::MemoryBlock memory;
             stream.readIntoMemoryBlock(memory);
@@ -253,7 +255,7 @@ namespace eim {
                 streams::out << flags << p->getDefaultValue() << (int)p->getCategory()
                     << p->getName(1024) << p->getLabel() << p->getAllValueStrings();
             }
-            streams::out.flush();
+            eim::streams::output_stream::flush();
         }
 
         void writeAllParameterChanges() {
@@ -272,9 +274,9 @@ namespace eim {
 
         template <typename T> inline void writeToHostBuffer(T var) {
             T* p = reinterpret_cast<T*>(&var);
-            for (int i = 0; i < sizeof(T); i++) hostBuffer[hostBufferPos++] = ((char*)p)[i];
+            for (size_t i = 0; i < sizeof(T); i++) hostBuffer[hostBufferPos++] = ((char*)p)[i];
         }
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(plugin_host)
     };
-};
+}

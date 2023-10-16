@@ -9,12 +9,9 @@ env:
   BUILD_TYPE: release
 
 jobs:
-  build:
-    name: ${{ matrix.os }}-${{ github.workflow }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [windows-latest]
+  build-windows:
+    name: Build (Windows)
+    runs-on: windows-latest
 
     steps:
       - name: Check out git repository
@@ -61,3 +58,72 @@ jobs:
           file: ${{ github.workspace }}/build/EIMHost_artefacts/MinSizeRel/EIMHost.exe
           tag: ${{ github.ref }}
           asset_name: EIMHost-x86.exe
+
+  build-macos:
+    name: Build (MacOS)
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Install Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Set version
+        run: node -e "const fs=require('fs');fs.writeFileSync('CMakeLists.txt',fs.readFileSync('CMakeLists.txt','utf-8').replace(/1\.0\.0/g,'${{ github.ref }}'.replace('refs/tags/','')))"
+
+      - name: Build
+        run: |
+          node patch
+          mkdir build
+          cd build
+          cmake -G Ninja -A x64 .. -DCMAKE_BUILD_TYPE=Release
+          cmake --build . --config MinSizeRel
+
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ${{ github.workspace }}/build/EIMHost_artefacts/MinSizeRel/EIMHost
+          tag: ${{ github.ref }}
+          asset_name: EIMHost-MacOS
+
+
+  build-linux:
+    name: Build (Linux)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Install Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Set version
+        run: node -e "const fs=require('fs');fs.writeFileSync('CMakeLists.txt',fs.readFileSync('CMakeLists.txt','utf-8').replace(/1\.0\.0/g,'${{ github.ref }}'.replace('refs/tags/','')))"
+
+      - name: Build
+        run: |
+          node patch
+          mkdir build
+          cd build
+          cmake -G Ninja -A x64 .. -DCMAKE_BUILD_TYPE=Release
+          cmake --build . --config MinSizeRel
+
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ${{ github.workspace }}/build/EIMHost_artefacts/MinSizeRel/EIMHost
+          tag: ${{ github.ref }}
+          asset_name: EIMHost-Linux

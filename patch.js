@@ -1,7 +1,7 @@
 const fs = require('fs').promises
 
 const patchs = {
-  'JUCE/modules/juce_gui_basics/native/juce_win32_Windowing.cpp': {
+  'JUCE/modules/juce_gui_basics/native/juce_Windowing_Windows.cpp': {
     from: 'hwnd = CreateWindowEx',
     to: 'hwnd = parentToAddTo != nullptr && (styleFlags & (1 << 28)) ? CreateWindow(WindowClassHolder::getInstance()->getWindowClassName(), L"",\
 WS_OVERLAPPED | WS_SYSMENU | WS_CAPTION | WS_MINIMIZEBOX | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | ((styleFlags & windowIsResizable) ? WS_MAXIMIZEBOX | WS_THICKFRAME : 0),\

@@ -5,20 +5,20 @@
 namespace eim {
     class audio_output : public juce::AudioIODeviceCallback {
     public:
-        audio_output(juce::AudioDeviceManager& deviceManager, juce::AudioDeviceManager::AudioDeviceSetup& setup,
-            juce::String shmName, int memorySize) : deviceManager(deviceManager), setup(setup) {
+        audio_output(juce::AudioDeviceManager& _deviceManager, juce::AudioDeviceManager::AudioDeviceSetup& _setup,
+            const juce::String& shmName, int memorySize) : deviceManager(_deviceManager), setup(_setup) {
             if (shmName.isNotEmpty()) {
                 shm.reset(jshm::shared_memory::open(shmName.toRawUTF8(), memorySize));
                 if (!shm) exit();
             }
         }
-        ~audio_output() {
+        ~audio_output() override {
             shm.reset();
         }
 
         void audioDeviceIOCallbackWithContext(const float* const*, int, float* const* outputChannelData, int, int, const juce::AudioIODeviceCallbackContext&) override {
             streams::out.writeAction(0);
-            streams::out.flush();
+            eim::streams::output_stream::flush();
             juce::int8 id;
             if (streams::in.read(id) != 1) {
                 exit();
@@ -31,7 +31,7 @@ namespace eim {
                 if (shm) {
                     auto inData = reinterpret_cast<float*>(shm->address());
                     for (int i = 0; i < numOutputChannels; i++)
-                        std::memcpy(outputChannelData[i], inData + i * setup.bufferSize, setup.bufferSize * sizeof(float));
+                        std::memcpy(outputChannelData[i], inData + i * setup.bufferSize, (size_t) setup.bufferSize * sizeof(float));
                 } else for (int i = 0; i < numOutputChannels; i++) streams::in.readArray(outputChannelData[i], setup.bufferSize);
                 break;
             }
@@ -73,7 +73,7 @@ namespace eim {
             streams::out.writeVarInt(bufferSizes.size());
             for (int it : bufferSizes) streams::out.writeVarInt(it);
             streams::out << device->hasControlPanel();
-            streams::out.flush();
+            eim::streams::output_stream::flush();
             int outBufferSize;
             streams::in >> outBufferSize;
             if (setup.bufferSize != bufSize) setup.bufferSize = bufSize;
@@ -109,9 +109,9 @@ namespace eim {
             });
         }
 
-        int getExitCode() { return isErrorExit; }
+        [[nodiscard]] int getExitCode() const { return isErrorExit; }
 
-        void exit() {
+        static void exit() {
             juce::MessageManager::getInstance()->stopDispatchLoop();
         }
 
