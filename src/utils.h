@@ -19,7 +19,7 @@ namespace eim {
         public:
             output_stream() {
                 setvbuf(oldStdout, nullptr, _IOFBF, 4096);
-                freopen(nullptr, "wb", oldStdout);
+                juce::ignoreUnused(freopen(nullptr, "wb", oldStdout));
 #ifdef _WIN32
                 _setmode(_fileno(oldStdout), _O_BINARY);
 #endif
@@ -81,7 +81,7 @@ namespace eim {
 
             void flush() { std::fflush(oldStdout); }
 
-            static void preventStdout() { freopen("/dev/null", "w", stdout); }
+            static void preventStdout() { juce::ignoreUnused(freopen("/dev/null", "w", stdout)); }
 
         private:
             FILE *oldStdout = fdopen(dup(1), "wb");
@@ -91,7 +91,7 @@ namespace eim {
         public:
             input_stream() {
                 setvbuf(stdin, nullptr, _IOFBF, 4096);
-                freopen(nullptr, "rb", stdin);
+                juce::ignoreUnused(freopen(nullptr, "rb", stdin));
 #ifdef _WIN32
                 _setmode(_fileno(stdin), _O_BINARY);
 #endif
@@ -99,11 +99,13 @@ namespace eim {
 
             static bool readBool() {
                 char var;
-                std::fread(&var, 1, 1, stdin);
-                return var != 0;
+                auto ret = std::fread(&var, 1, 1, stdin);
+                return ret && var != 0;
             }
             template <typename T> size_t read(T& var) { return std::fread(&var, sizeof(T), 1, stdin); }
-            template <typename T> void readArray(T* var, int len) { std::fread(var, sizeof(T), (size_t) len, stdin); }
+            template <typename T> void readArray(T* var, int len) {
+                juce::ignoreUnused(std::fread(var, sizeof(T), (size_t) len, stdin));
+            }
             template <typename T> input_stream& operator>>(T& var) { read(var); return *this; }
             input_stream& operator>>(bool& var) { var = readBool(); return *this; }
             input_stream& operator>>(std::string& var) { var = readString(); return *this; }
@@ -131,7 +133,8 @@ namespace eim {
                 readVarInt(len);
 				if (len == 0) return "";
                 char* str = new char[static_cast<unsigned long>(len + 1)];
-                std::fread(str, sizeof(char), (size_t) len, stdin);
+                auto ret = std::fread(str, sizeof(char), (size_t) len, stdin);
+                if ((int)ret < len) len = (int)ret;
                 str[len] = '\0';
                 return str;
             }
