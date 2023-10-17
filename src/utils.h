@@ -18,15 +18,15 @@ namespace eim {
         class output_stream {
         public:
             output_stream() {
-                setvbuf(stderr, nullptr, _IOFBF, 4096);
-                freopen(nullptr, "wb", stderr);
+                setvbuf(oldStdout, nullptr, _IOFBF, 4096);
+                freopen(nullptr, "wb", oldStdout);
 #ifdef _WIN32
-                _setmode(_fileno(stderr), _O_BINARY);
+                _setmode(_fileno(oldStdout), _O_BINARY);
 #endif
             }
 
             void write(bool var) { write((char)var); }
-            template <typename T> void write(T var) { std::fwrite(&var, sizeof(T), 1, stderr); }
+            template <typename T> void write(T var) { std::fwrite(&var, sizeof(T), 1, oldStdout); }
             void write(const juce::Array<juce::String>& var) {
                 writeVarInt(var.size());
                 for (auto& str : var) write(str);
@@ -35,7 +35,7 @@ namespace eim {
                 writeVarInt(var.size());
                 for (auto& str : var) write(str);
             }
-            template <typename T> void writeArray(T* var, int len) { std::fwrite(var, sizeof(T), (size_t) len, stderr); }
+            template <typename T> void writeArray(T* var, int len) { std::fwrite(var, sizeof(T), (size_t) len, oldStdout); }
             template <typename T> output_stream& operator<<(T var) { write(var); return *this; }
             output_stream& operator<<(bool var) { write(var); return *this; }
             output_stream& operator<<(const juce::String& var) { write(var); return *this; }
@@ -65,7 +65,7 @@ namespace eim {
                 auto raw = str.toRawUTF8();
                 auto len = (int)strlen(raw);
                 writeVarInt(len);
-                std::fwrite(raw, sizeof(char), (size_t) len, stderr);
+                std::fwrite(raw, sizeof(char), (size_t) len, oldStdout);
             }
             void writeAction(juce::int8 action) { write(action); }
             void writeByteOrderMessage() {
@@ -76,10 +76,15 @@ namespace eim {
                 write((char)127);
                 write(str);
                 flush();
-                std::cout << str << '\n';
+                std::cerr << str << '\n';
             }
 
-            static void flush() { std::fflush(stderr); }
+            void flush() { std::fflush(oldStdout); }
+
+            static void preventStdout() { freopen("/dev/null", "w", stdout); }
+
+        private:
+            FILE *oldStdout = fdopen(dup(1), "wb");
         };
 
         class input_stream {

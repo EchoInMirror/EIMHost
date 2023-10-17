@@ -1,6 +1,10 @@
 #include "plugin_host.h"
 #include "audio_output.h"
 
+#if JUCE_MAC
+namespace juce { extern void initialiseNSApplication(); }
+#endif
+
 int main(int argc, char* argv[]) {
     std::ios::sync_with_stdio(false);
     std::cin.tie(nullptr);
@@ -14,14 +18,12 @@ int main(int argc, char* argv[]) {
         manager.addDefaultFormats();
         auto id = args->getValueForOption("-S|--scan");
         if (id.isEmpty()) {
-#ifdef JUCE_MAC
-            auto paths = manager.getFormat(0)->searchPathsForPlugins(juce::FileSearchPath(), true, true);
-            puts(juce::JSON::toString(paths).toRawUTF8());
+            juce::StringArray paths;
+            for (auto it : manager.getFormats()) {
+                paths.addArray(it->searchPathsForPlugins(juce::FileSearchPath(), true, true));
+            }
+            puts(juce::JSON::toString(paths, true).toRawUTF8());
             return 0;
-#else
-            std::cerr << "No any file specified.\n";
-            return -1;
-#endif
         } else if (id == "#") {
             char path[512];
             std::cin.getline(path, 512, 0);
@@ -58,6 +60,7 @@ int main(int argc, char* argv[]) {
         puts(("$EIMHostScanner{{" + juce::JSON::toString(arr, true) + "}}EIMHostScanner$").toRawUTF8());
         juce::shutdownJuce_GUI();
     } else if (args->containsOption("-L|--load")) {
+        eim::streams::output_stream::preventStdout();
         juce::initialiseJuce_GUI();
         juce::JUCEApplicationBase::createInstance = eim::plugin_host::createInstance;
         juce::JUCEApplicationBase::main(argc, (const char**)argv);
@@ -67,15 +70,17 @@ int main(int argc, char* argv[]) {
         CoInitialize(nullptr);
 #endif
 
+        juce::initialiseJuce_GUI();
         juce::AudioDeviceManager deviceManager;
         if (args->containsOption("-A|--all")) {
             for (auto& it : deviceManager.getAvailableDeviceTypes()) {
                 it->scanForDevices();
                 for (auto& j : it->getDeviceNames()) {
-                    std::cerr << "[" << it->getTypeName() << "] " << j << "$EIM$";
+                    std::cout << "[" << it->getTypeName() << "] " << j << "$EIM$";
                 }
             }
-            fflush(stderr);
+            fflush(stdout);
+            juce::shutdownJuce_GUI();
             return 0;
         }
         auto deviceType = args->getValueForOption("-T|--type");
@@ -84,7 +89,8 @@ int main(int argc, char* argv[]) {
         juce::AudioDeviceManager::AudioDeviceSetup setup;
         setup.bufferSize = args->containsOption("-B|--bufferSize") ? args->getValueForOption("-B|--bufferSize").getIntValue() : 1024;
         setup.sampleRate = args->containsOption("-R|--sampleRate") ? args->getValueForOption("-R|--sampleRate").getIntValue() : 48000;
-        
+
+        eim::streams::output_stream::preventStdout();
         eim::streams::out.writeByteOrderMessage();
         
         if (deviceName == "#") deviceName = eim::streams::in.readString();
@@ -97,7 +103,6 @@ int main(int argc, char* argv[]) {
         }
         if (deviceType.isNotEmpty()) deviceManager.setCurrentAudioDeviceType(deviceType, true);
         if (deviceName.isNotEmpty() && deviceName != "#") setup.outputDeviceName = deviceName;
-        juce::initialiseJuce_GUI();
         auto error = deviceManager.initialise(0, 2, nullptr, true, "", &setup);
         if (error.isNotEmpty()) {
             eim::streams::out.writeError(error);
@@ -107,6 +112,9 @@ int main(int argc, char* argv[]) {
 
         deviceManager.addAudioCallback(&audioCallback);
 
+#if JUCE_MAC
+        juce::initialiseNSApplication();
+#endif
         juce::MessageManager::getInstance()->runDispatchLoop();
         deviceManager.closeAudioDevice();
         juce::shutdownJuce_GUI();

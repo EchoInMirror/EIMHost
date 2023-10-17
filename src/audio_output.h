@@ -18,7 +18,7 @@ namespace eim {
 
         void audioDeviceIOCallbackWithContext(const float* const*, int, float* const* outputChannelData, int, int, const juce::AudioIODeviceCallbackContext&) override {
             streams::out.writeAction(0);
-            eim::streams::output_stream::flush();
+            eim::streams::out.flush();
             juce::int8 id;
             if (streams::in.read(id) != 1) {
                 exit();
@@ -73,7 +73,7 @@ namespace eim {
             streams::out.writeVarInt(bufferSizes.size());
             for (int it : bufferSizes) streams::out.writeVarInt(it);
             streams::out << device->hasControlPanel();
-            eim::streams::output_stream::flush();
+            eim::streams::out.flush();
             int outBufferSize;
             streams::in >> outBufferSize;
             if (setup.bufferSize != bufSize) setup.bufferSize = bufSize;
@@ -86,7 +86,7 @@ namespace eim {
         }
 
         void audioDeviceError(const juce::String& errorMessage) override {
-            std::cout << errorMessage << '\n';
+            std::cerr << errorMessage << '\n';
             isErrorExit = true;
             exit();
         }

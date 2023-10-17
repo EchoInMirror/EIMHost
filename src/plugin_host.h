@@ -146,7 +146,7 @@ namespace eim {
                     
                     streams::out.writeAction(1);
                     if (!shm) for (int i = 0; i < numOutputChannels; i++) streams::out.writeArray(buffer.getReadPointer(i), bufferSize);
-                    eim::streams::output_stream::flush();
+                    eim::streams::out.flush();
                     break;
                 }
                 case 2: {
@@ -226,10 +226,13 @@ namespace eim {
             if (!processor->hasEditor()) return;
             auto component = processor->createEditorIfNeeded();
             if (!component) return;
+            long long parentHandle = 0;
+#ifdef JUCE_WINDOWS
+            parentHandle = args->containsOption("-H|--handle") ? args->getValueForOption("-H|--handle").getLargeIntValue() : 0;
+#endif
             window = std::make_unique<PluginWindow>("[EIMHost] " + processor->getName() + " (" +
                 processor->getPluginDescription().pluginFormatName + ")", component, window,
-                processor->wrapperType != juce::AudioProcessor::wrapperType_VST,
-                args->containsOption("-H|--handle") ? args->getValueForOption("-H|--handle").getLargeIntValue() : 0);
+                processor->wrapperType != juce::AudioProcessor::wrapperType_VST, parentHandle);
         }
 
         void loadState(const juce::String& file) {
@@ -255,7 +258,7 @@ namespace eim {
                 streams::out << flags << p->getDefaultValue() << (int)p->getCategory()
                     << p->getName(1024) << p->getLabel() << p->getAllValueStrings();
             }
-            eim::streams::output_stream::flush();
+            eim::streams::out.flush();
         }
 
         void writeAllParameterChanges() {
