@@ -19,6 +19,7 @@ namespace eim {
     public:
         plugin_host() : juce::AudioPlayHead(), juce::Thread("IO Thread") { }
         ~plugin_host() override {
+            delete[] prevParameterChanges;
             shm.reset();
         }
 
@@ -41,6 +42,8 @@ namespace eim {
             juce::AudioPluginFormatManager manager;
             manager.addDefaultFormats();
             processor = manager.createPluginInstance(desc, sampleRate, bufferSize, error);
+            prevParameterChangesCnt = processor->getParameters().size();
+            prevParameterChanges = new float[(size_t) prevParameterChangesCnt];
             if (error.isNotEmpty()) {
                 streams::out.writeError(error);
                 quit();
@@ -131,7 +134,7 @@ namespace eim {
                         float value;
                         streams::in.readVarInt(pid);
                         streams::in >> value;
-                        if (auto* param = parameters[pid]) param->setValue(value);
+                        if (pid != 9999999) if (auto* param = parameters[pid]) param->setValue(value);
                     }
                     auto hasParameterChanges = !parameterChanges.empty();
                     if ((hostBufferPos > 0 || hasParameterChanges) && mtx.try_lock()) {
@@ -197,10 +200,13 @@ namespace eim {
         }
 
         void audioProcessorParameterChanged(juce::AudioProcessor*, int parameterIndex, float newValue) override {
-            if (juce::approximatelyEqual(prevParameterChanges[parameterIndex], newValue) || !mtx.try_lock()) return;
-            prevParameterChanges[parameterIndex] = newValue;
+            if (!mtx.try_lock()) return;
             auto time = juce::Time::getApproximateMillisecondCounter() + 500;
-            if (!parameterChanges.try_emplace(parameterIndex, newValue, time).second) parameterChanges[parameterIndex].second = time;
+            if (!parameterChanges.try_emplace(parameterIndex, newValue, time).second) {
+                auto& p = parameterChanges[parameterIndex];
+                p.first = newValue;
+                p.second = time;
+            }
             mtx.unlock();
         }
 
@@ -215,7 +221,8 @@ namespace eim {
         juce::AudioPlayHead::PositionInfo positionInfo;
         juce::Array<juce::AudioProcessorParameter*> parameters;
         std::unordered_map<int, std::pair<float, juce::uint32>> parameterChanges;
-        std::unordered_map<int, float> prevParameterChanges;
+        float* prevParameterChanges{};
+        int prevParameterChangesCnt = 0;
         bool isRealtime = true;
         int sampleRate = 48000, bufferSize = 1024;
         int hostBufferPos = 0;
@@ -268,9 +275,14 @@ namespace eim {
                     it++;
                     continue;
                 }
-                streams::out.writeAction(3);
-                streams::out.writeVarInt(it->first);
-                streams::out << it->second.first;
+                auto id = it->first;
+                auto value = it->second.first;
+                if (prevParameterChangesCnt > id && !juce::approximatelyEqual(prevParameterChanges[id], value)) {
+                    prevParameterChanges[id] = value;
+                    streams::out.writeAction(3);
+                    streams::out.writeVarInt(id);
+                    streams::out << value;
+                }
                 parameterChanges.erase(it++);
             }
         }
