@@ -85,7 +85,7 @@ jobs:
           brew install ninja
           cmake -G Ninja .. -DCMAKE_BUILD_TYPE=MinSizeRel
           cmake --build . --config MinSizeRel
-          cd build/EIMHost_artefacts/MinSizeRel && zip -r -q EIMHost.zip EIMHost.app
+          cd EIMHost_artefacts/MinSizeRel && zip -r -q EIMHost.zip EIMHost.app
 
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
