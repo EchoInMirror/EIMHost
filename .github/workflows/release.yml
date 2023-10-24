@@ -85,15 +85,15 @@ jobs:
           brew install ninja
           cmake -G Ninja .. -DCMAKE_BUILD_TYPE=MinSizeRel
           cmake --build . --config MinSizeRel
+          cd build/EIMHost_artefacts/MinSizeRel && zip -r -q EIMHost.zip EIMHost.app
 
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: ${{ github.workspace }}/build/EIMHost_artefacts/MinSizeRel/EIMHost
+          file: ${{ github.workspace }}/build/EIMHost_artefacts/MinSizeRel/EIMHost.zip
           tag: ${{ github.ref }}
-          asset_name: EIMHost-MacOS
-
+          asset_name: EIMHost-MacOS.zip
 
   build-linux:
     name: Build (Linux)
