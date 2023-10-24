@@ -61,10 +61,8 @@ int main(int argc, char* argv[]) {
         juce::shutdownJuce_GUI();
     } else if (args->containsOption("-L|--load")) {
         eim::streams::output_stream::preventStdout();
-        juce::initialiseJuce_GUI();
         juce::JUCEApplicationBase::createInstance = eim::plugin_host::createInstance;
         juce::JUCEApplicationBase::main(argc, (const char**)argv);
-        juce::shutdownJuce_GUI();
     } else if (args->containsOption("-O|--output")) {
 #ifdef JUCE_WINDOWS
         CoInitialize(nullptr);

@@ -18,14 +18,15 @@ juce_add_console_app(${PROJECT_NAME}
     VERSION "1.0.0"
     PRODUCT_NAME ${PROJECT_NAME}
     COMPANY_NAME "EchoInMirror"
+    BUNDLE_ID com.eimsound.eimhost
     ICON_SMALL "resources/logo128.png"
     ICON_BIG "resources/logo512.png"
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    PLUGINHOST_AU TRUE
 )
-
-if(MSVC)
-    _juce_configure_bundle(${PROJECT_NAME} ${PROJECT_NAME})
-    _juce_add_resources_rc(${PROJECT_NAME} ${PROJECT_NAME})
-endif(MSVC)
+set_target_properties(${PROJECT_NAME} PROPERTIES JUCE_TARGET_KIND_STRING "App")
+_juce_configure_bundle(${PROJECT_NAME} ${PROJECT_NAME})
+_juce_configure_app_bundle(${PROJECT_NAME} ${PROJECT_NAME})
 
 target_sources(${PROJECT_NAME} PRIVATE ${EIM_SRC_FILES})
 target_compile_definitions(${PROJECT_NAME} PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
@@ -75,7 +76,6 @@ target_link_libraries(${PROJECT_NAME}
         juce::juce_gui_extra
         juce::juce_audio_utils
         java_shared_memory
-    PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
