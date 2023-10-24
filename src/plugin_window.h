@@ -7,11 +7,11 @@ int width_ = 0, height_ = 0, x_ = 0, y_ = 0;
 
 class PluginWindow : public juce::ResizableWindow {
 public:
-    PluginWindow(const juce::String& title, juce::Component* component, std::unique_ptr<PluginWindow>& ptr,
+    PluginWindow(const juce::String& title, juce::AudioProcessorEditor* component, std::unique_ptr<PluginWindow>& ptr,
         bool resizable, long long parentHandle)
         : ResizableWindow(title, !parentHandle), thisWindow(ptr) {
         setUsingNativeTitleBar(true);
-        if (resizable) setResizable(true, false);
+        setResizable(resizable && component->isResizable(), false);
         
         if (width_ == 0) width_ = component->getWidth();
         if (height_ == 0) height_ = component->getHeight();
