@@ -1,7 +1,7 @@
 #ifndef EIM_UTILS_H
 #define EIM_UTILS_H
 
-#ifdef _WIN32
+#ifdef JUCE_WINDOWS
 #include <io.h>
 #endif
 
@@ -20,8 +20,8 @@ namespace eim {
             output_stream() {
                 setvbuf(oldStdout, nullptr, _IOFBF, 4096);
                 juce::ignoreUnused(freopen(nullptr, "wb", oldStdout));
-#ifdef _WIN32
-                _setmode(_fileno(oldStdout), _O_BINARY);
+#ifdef JUCE_WINDOWS
+                juce::ignoreUnused(_setmode(_fileno(oldStdout), _O_BINARY));
 #endif
             }
 
@@ -84,7 +84,11 @@ namespace eim {
             static void preventStdout() { juce::ignoreUnused(freopen("/dev/null", "w", stdout)); }
 
         private:
+#ifdef JUCE_WINDOWS
+            FILE* oldStdout = _fdopen(_dup(1), "wb");
+#else
             FILE *oldStdout = fdopen(dup(1), "wb");
+#endif
         };
 
         class input_stream {
@@ -92,8 +96,8 @@ namespace eim {
             input_stream() {
                 setvbuf(stdin, nullptr, _IOFBF, 4096);
                 juce::ignoreUnused(freopen(nullptr, "rb", stdin));
-#ifdef _WIN32
-                _setmode(_fileno(stdin), _O_BINARY);
+#ifdef JUCE_WINDOWS
+                juce::ignoreUnused(_setmode(_fileno(stdin), _O_BINARY));
 #endif
             }
 

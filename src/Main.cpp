@@ -65,7 +65,7 @@ int main(int argc, char* argv[]) {
         juce::JUCEApplicationBase::main(argc, (const char**)argv);
     } else if (args->containsOption("-O|--output")) {
 #ifdef JUCE_WINDOWS
-        CoInitialize(nullptr);
+        juce::ignoreUnused(CoInitialize(nullptr));
 #endif
 
         juce::initialiseJuce_GUI();

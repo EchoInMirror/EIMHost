@@ -7,7 +7,7 @@ add_definitions(-DJUCE_USE_MP3AUDIOFORMAT -DJUCE_PLUGINHOST_VST3 -DJUCE_PLUGINHO
 
 if(MSVC)
     add_definitions(-DJUCE_PLUGINHOST_VST -DJUCE_ASIO)
-endif(MSVC)
+endif()
 
 file(GLOB EIM_SRC_FILES "src/*.cpp" "src/*.h")
 
@@ -26,7 +26,9 @@ juce_add_console_app(${PROJECT_NAME}
 )
 set_target_properties(${PROJECT_NAME} PROPERTIES JUCE_TARGET_KIND_STRING "App")
 _juce_configure_bundle(${PROJECT_NAME} ${PROJECT_NAME})
-_juce_configure_app_bundle(${PROJECT_NAME} ${PROJECT_NAME})
+if(NOT MSVC)
+    _juce_configure_app_bundle(${PROJECT_NAME} ${PROJECT_NAME})
+endif()
 
 target_sources(${PROJECT_NAME} PRIVATE ${EIM_SRC_FILES})
 target_compile_definitions(${PROJECT_NAME} PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
@@ -62,7 +64,7 @@ if(MSVC)
     string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHa")
     set_property(TARGET ${PROJECT_NAME} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-endif(MSVC)
+endif()
 
 target_compile_definitions(${PROJECT_NAME}
     PRIVATE
