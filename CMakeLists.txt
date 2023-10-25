@@ -23,6 +23,7 @@ juce_add_console_app(${PROJECT_NAME}
     ICON_BIG "resources/logo512.png"
     MICROPHONE_PERMISSION_ENABLED TRUE
     PLUGINHOST_AU TRUE
+    PLIST_TO_MERGE "<plist version=\"1.0\"><dict><key>LSUIElement</key><string>1</string></dict></plist>"
 )
 set_target_properties(${PROJECT_NAME} PROPERTIES JUCE_TARGET_KIND_STRING "App")
 _juce_configure_bundle(${PROJECT_NAME} ${PROJECT_NAME})

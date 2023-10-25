@@ -12,6 +12,7 @@ int main(int argc, char* argv[]) {
     std::cerr.tie(nullptr);
     auto args = new juce::ArgumentList(argc, argv);
     eim::args = args;
+    juce::Process::setDockIconVisible(false);
 
     if (eim::args->containsOption("-S|--scan")) {
         juce::AudioPluginFormatManager manager;
