@@ -131,23 +131,21 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                         auto channels = juce::jmax(processor->getTotalNumInputChannels(), processor->getTotalNumOutputChannels());
                         bool setInnerBuffer = true;
                         if (enabledSharedMemory) {
+                            shm.reset();
                             int shmSize;
+                            juce::String shmName = streams::in.readString();
                             streams::in >> shmSize;
-                            if (!shm || shmSize) {
-                                shm.reset();
-                                auto shmName = args->getValueForOption("-M|--memory");
-                                if (shmName.isNotEmpty()) {
-                                    shm.reset(jshm::shared_memory::open(shmName.toRawUTF8(), shmSize));
-                                    if (shm) {
-                                        auto buffers = new float* [(unsigned long)channels];
-                                        for (int i = 0; i < channels; i++) buffers[i] = reinterpret_cast<float*>(shm->address()) + i * bufferSize;
-                                        buffer = juce::AudioBuffer<float>(buffers, channels, bufferSize);
-                                        delete[] buffers;
-                                        setInnerBuffer = false;
-                                    }
+                            if (!shm || (shmSize && shmName.isNotEmpty())) {
+                                shm.reset(jshm::shared_memory::open(shmName.toRawUTF8(), shmSize));
+                                if (shm) {
+                                    auto buffers = new float* [(unsigned long)channels];
+                                    for (int i = 0; i < channels; i++) buffers[i] = reinterpret_cast<float*>(shm->address()) + i * bufferSize;
+                                    buffer = juce::AudioBuffer<float>(buffers, channels, bufferSize);
+                                    delete[] buffers;
+                                    setInnerBuffer = false;
                                 }
                             } else setInnerBuffer = false;
-                        }
+                        } else shm.reset();
                         if (setInnerBuffer) buffer = juce::AudioBuffer<float>(channels, bufferSize);
                         processor->prepareToPlay(sampleRate, bufferSize);
                         break;
@@ -183,7 +181,8 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                         for (int i = 0; i < numMidiEvents; i++) {
                             int data;
                             short time;
-                            streams::in >> data >> time;
+                            streams::in.readVarInt(data);
+                            streams::in >> time;
                             buf.addEvent(juce::MidiMessage(data & 0xFF, (data >> 8) & 0xFF, (data >> 16) & 0xFF), time);
                         }
                         for (int i = 0; i < numParameters; i++) {
@@ -206,7 +205,7 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
 
                         streams::out.writeAction(1);
                         if (!shm) for (int i = 0; i < numOutputChannels; i++) streams::out.writeArray(buffer.getReadPointer(i), bufferSize);
-                        eim::streams::out.flush();
+                        streams::out.flush();
                         break;
                     }
                     case 2: {
@@ -221,7 +220,9 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                         if (!mml.lockWasGained()) return;
                         juce::MemoryBlock memory;
                         processor->getStateInformation(memory);
-                        juce::File(streams::in.readString()).replaceWithData(memory.getData(), memory.getSize());
+                        streams::out.write((bool)juce::File(streams::in.readString())
+                            .replaceWithData(memory.getData(), memory.getSize()));
+                        streams::out.flush();
                         break;
                     }
                     case 4: {
@@ -277,7 +278,7 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                 streams::out << flags << p->getDefaultValue() << (int)p->getCategory()
                     << p->getName(1024) << p->getLabel() << p->getAllValueStrings();
             }
-            eim::streams::out.flush();
+            streams::out.flush();
         }
 
         void writeAllParameterChanges() {
