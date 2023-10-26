@@ -269,6 +269,7 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                 << (juce::int8)processor->getTotalNumOutputChannels();
             streams::out.writeVarInt(parameters.size());
             for (auto p : parameters) {
+                prevParameterChanges[p->getParameterIndex()] = p->getValue();
                 juce::int8 flags = 0;
                 if (p->isAutomatable()) flags |= PARAMETER_IS_AUTOMATABLE;
                 if (p->isDiscrete()) flags |= PARAMETER_IS_DISCRETE;
