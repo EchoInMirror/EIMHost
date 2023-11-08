@@ -58,10 +58,10 @@ namespace eim {
                 write((char)var);
             }
             void write(const juce::String& str) {
-				if (str.isEmpty()) {
-					writeVarInt(0);
-					return;
-				}
+                if (str.isEmpty()) {
+                    writeVarInt(0);
+                    return;
+                }
                 auto raw = str.toRawUTF8();
                 auto len = (int)strlen(raw);
                 writeVarInt(len);
@@ -81,7 +81,13 @@ namespace eim {
 
             void flush() { std::fflush(oldStdout); }
 
-            static void preventStdout() { juce::ignoreUnused(freopen("/dev/null", "w", stdout)); }
+            static void preventStdout() {
+#ifdef JUCE_WINDOWS
+                juce::ignoreUnused(freopen("NUL", "w", stdout));
+#else
+                juce::ignoreUnused(freopen("/dev/null", "w", stdout));
+#endif
+            }
 
         private:
 #ifdef JUCE_WINDOWS
@@ -115,13 +121,13 @@ namespace eim {
             input_stream& operator>>(std::string& var) { var = readString(); return *this; }
 
             void readVarInt(juce::int32& var) {
-				var = 0;
-				for (int i = 0; i <= 28; i += 7) {
-					char b;
-					read(b);
-					var |= (juce::int32)(b & 0x7F) << i;
-					if ((b & 0x80) == 0) return;
-				}
+                var = 0;
+                for (int i = 0; i <= 28; i += 7) {
+                    char b;
+                    read(b);
+                    var |= (juce::int32)(b & 0x7F) << i;
+                    if ((b & 0x80) == 0) return;
+                }
             }
             void readVarLong(juce::int64& var) {
                 var = 0;
@@ -135,7 +141,7 @@ namespace eim {
             std::string readString() {
                 int len;
                 readVarInt(len);
-				if (len == 0) return "";
+                if (len == 0) return "";
                 char* str = new char[static_cast<unsigned long>(len + 1)];
                 auto ret = std::fread(str, sizeof(char), (size_t) len, stdin);
                 if ((int)ret < len) len = (int)ret;

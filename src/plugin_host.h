@@ -276,8 +276,13 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                 if (p->isBoolean()) flags |= PARAMETER_IS_BOOLEAN;
                 if (p->isMetaParameter()) flags |= PARAMETER_IS_META;
                 if (p->isOrientationInverted()) flags |= PARAMETER_IS_ORIENTATION_INVERTED;
-                streams::out << flags << p->getDefaultValue() << (int)p->getCategory()
-                    << p->getName(1024) << p->getLabel() << p->getAllValueStrings();
+
+                streams::out << flags << p->getDefaultValue() << (int)p->getCategory() << p->getNumSteps()
+                    << p->getName(1024) << p->getLabel();
+
+                auto valueStrings = p->getAllValueStrings();
+                if (valueStrings.size() > 64) streams::out.writeVarInt(0);
+                else streams::out << valueStrings;
             }
             streams::out.flush();
         }
