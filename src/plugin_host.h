@@ -277,8 +277,8 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                 if (p->isMetaParameter()) flags |= PARAMETER_IS_META;
                 if (p->isOrientationInverted()) flags |= PARAMETER_IS_ORIENTATION_INVERTED;
 
-                streams::out << flags << p->getDefaultValue() << (int)p->getCategory() << p->getNumSteps()
-                    << p->getName(1024) << p->getLabel();
+                streams::out << flags << p->getValue() << p->getDefaultValue() << (int)p->getCategory()
+                    << p->getNumSteps() << p->getName(1024) << p->getLabel();
 
                 auto valueStrings = p->getAllValueStrings();
                 if (valueStrings.size() > 64) streams::out.writeVarInt(0);
@@ -289,6 +289,7 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
 
         void writeAllParameterChanges() {
             auto time = juce::Time::getApproximateMillisecondCounter();
+            std::vector<int>* toRemove = nullptr;
             for (auto it = parameterChanges.begin(); it != parameterChanges.end();) {
                 if (it->second.second > time) {
                     it++;
@@ -298,11 +299,20 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                 auto value = it->second.first;
                 if (prevParameterChangesCnt > id && !juce::approximatelyEqual(prevParameterChanges[id], value)) {
                     prevParameterChanges[id] = value;
-                    streams::out.writeAction(3);
-                    streams::out.writeVarInt(id);
-                    streams::out << value;
+                    if (!toRemove) toRemove = new std::vector<int>();
+                    toRemove->push_back(id);
                 }
                 parameterChanges.erase(it++);
+            }
+
+            if (toRemove) {
+                streams::out.writeAction(3);
+                streams::out.writeVarInt((int) toRemove->size());
+                for (auto id : *toRemove) {
+                    streams::out.writeVarInt(id);
+                    streams::out << prevParameterChanges[id];
+                }
+                delete toRemove;
             }
         }
 
