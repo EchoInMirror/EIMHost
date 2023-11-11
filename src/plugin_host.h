@@ -154,8 +154,8 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                         double bpm;
                         juce::int8 numInputChannels, numOutputChannels = 0, flags;
                         juce::int64 timeInSamples;
-                        juce::int16 numMidiEvents, numParameters;
-                        streams::in >> flags >> bpm >> numMidiEvents >> numParameters;
+                        juce::int16 numMidiEvents;
+                        streams::in >> flags >> bpm >> numMidiEvents;
                         streams::in.readVarLong(timeInSamples);
 
                         double timeInSeconds = (double)timeInSamples / sampleRate;
@@ -185,6 +185,9 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                             streams::in >> time;
                             buf.addEvent(juce::MidiMessage(data & 0xFF, (data >> 8) & 0xFF, (data >> 16) & 0xFF), time);
                         }
+
+                        int numParameters;
+                        streams::in.readVarInt(numParameters);
                         for (int i = 0; i < numParameters; i++) {
                             int pid;
                             float value;
