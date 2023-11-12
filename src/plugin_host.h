@@ -131,11 +131,10 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                         auto channels = juce::jmax(processor->getTotalNumInputChannels(), processor->getTotalNumOutputChannels());
                         bool setInnerBuffer = true;
                         if (enabledSharedMemory) {
-                            shm.reset();
                             int shmSize;
                             juce::String shmName = streams::in.readString();
                             streams::in >> shmSize;
-                            if (!shm || (shmSize && shmName.isNotEmpty())) {
+                            if (shmSize && shmName.isNotEmpty()) {
                                 shm.reset(jshm::shared_memory::open(shmName.toRawUTF8(), shmSize));
                                 if (shm) {
                                     auto buffers = new float* [(unsigned long)channels];
@@ -316,6 +315,7 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                     streams::out << prevParameterChanges[id];
                 }
                 delete toRemove;
+                toRemove = nullptr;
             }
         }
 
