@@ -64,7 +64,10 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
             mtx.unlock();
         }
 
-        void audioProcessorChanged(juce::AudioProcessor*, const ChangeDetails&) override { }
+        void audioProcessorChanged(juce::AudioProcessor*, const ChangeDetails& details) override {
+            if (details.parameterInfoChanged) shouldWriteInformation = true;
+            else if (details.latencyChanged) shouldWriteLatency = true;
+        }
 
     private:
         juce::MidiBuffer midiBuffer;
@@ -77,7 +80,7 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
         std::unordered_map<int, std::pair<float, juce::uint32>> parameterChanges;
         float* prevParameterChanges{};
         int prevParameterChangesCnt = 0;
-        bool isRealtime = true;
+        bool isRealtime = true, shouldWriteInformation = false, shouldWriteLatency = false;
         int sampleRate = 48000, bufferSize = 1024;
         int hostBufferPos = 0;
         juce::int8 hostBuffer[8192] = {0};
@@ -205,6 +208,13 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                         }
                         processor->processBlock(buffer, buf);
 
+                        if (shouldWriteInformation) writeInitInformation();
+                        if (shouldWriteLatency) {
+                            streams::out.writeAction(4);
+                            streams::out << (juce::int32)processor->getLatencySamples();
+                            shouldWriteLatency = false;
+                        }
+
                         streams::out.writeAction(1);
                         if (!shm) for (int i = 0; i < numOutputChannels; i++) streams::out.writeArray(buffer.getReadPointer(i), bufferSize);
                         streams::out.flush();
@@ -265,10 +275,11 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
         }
 
         void writeInitInformation() {
+            shouldWriteInformation = false;
             parameters = processor->getParameters();
             streams::out.writeAction(0);
             streams::out << (juce::int8)processor->getTotalNumInputChannels()
-                << (juce::int8)processor->getTotalNumOutputChannels();
+                << (juce::int8)processor->getTotalNumOutputChannels() << (juce::int32)processor->getLatencySamples();
             streams::out.writeVarInt(parameters.size());
             for (auto p : parameters) {
                 prevParameterChanges[p->getParameterIndex()] = p->getValue();
@@ -315,7 +326,6 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                     streams::out << prevParameterChanges[id];
                 }
                 delete toRemove;
-                toRemove = nullptr;
             }
         }
 
