@@ -3,11 +3,11 @@
 #include <Windows.h>
 #endif
 
-int width_ = 0, height_ = 0, x_ = 0, y_ = 0;
-
-class PluginWindow : public juce::ResizableWindow {
+class plugin_window : public juce::ResizableWindow {
 public:
-    PluginWindow(const juce::String& title, juce::AudioProcessorEditor* component, std::unique_ptr<PluginWindow>& ptr,
+    static int width_, height_, x_, y_;
+
+    plugin_window(const juce::String& title, juce::AudioProcessorEditor* component, std::unique_ptr<plugin_window>& ptr,
         bool resizable, long long parentHandle)
         : ResizableWindow(title, !parentHandle), thisWindow(ptr) {
         setUsingNativeTitleBar(true);
@@ -20,10 +20,13 @@ public:
         auto scaleFactor = juce::jmin((screenBounds.getWidth() - 50) / (float)getWidth(), (screenBounds.getHeight() - 50) / (float)getHeight());
         auto trueWidth = scaleFactor < 1.0f ? (int)((float)width_ * scaleFactor) : width_;
         auto trueHeight = scaleFactor < 1.0f ? (int)((float)height_ * scaleFactor) : height_;
-        if (x_ > 20 && y_ > 20) setBounds(x_, y_, trueWidth, trueHeight); else centreWithSize(trueWidth, trueHeight);
+
+        if (x_ > 20 && y_ > 20 && x_ <= screenBounds.getWidth() - 20.0 && y_ <= screenBounds.getHeight() - 20.0) {
+            setBounds(x_, y_, trueWidth, trueHeight);
+        } else centreWithSize(trueWidth, trueHeight);
 
         setContentOwned(component, true);
-        PluginWindow::setVisible(true);
+        plugin_window::setVisible(true);
         
 #ifdef JUCE_WINDOWS
         if (parentHandle) addToDesktop(getDesktopWindowStyleFlags(), (HWND)(LONG_PTR)parentHandle);
@@ -32,7 +35,7 @@ public:
 #endif
     }
 
-    ~PluginWindow() override {
+    ~plugin_window() override {
         clearContentComponent();
     }
 
@@ -59,9 +62,14 @@ public:
     }
 
 private:
-    std::unique_ptr<PluginWindow>& thisWindow;
+    std::unique_ptr<plugin_window>& thisWindow;
     
     [[nodiscard]] float getDesktopScaleFactor() const override { return 1.0f; }
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginWindow)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(plugin_window)
 };
+
+int plugin_window::height_ = 0;
+int plugin_window::width_ = 0;
+int plugin_window::x_ = 0;
+int plugin_window::y_ = 0;

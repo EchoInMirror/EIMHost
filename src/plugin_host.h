@@ -73,7 +73,7 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
         juce::MidiBuffer midiBuffer;
         juce::AudioBuffer<float> buffer;
         std::unique_ptr<jshm::shared_memory> shm;
-        std::unique_ptr<PluginWindow> window;
+        std::unique_ptr<plugin_window> window;
         std::unique_ptr<juce::AudioPluginInstance> processor;
         juce::AudioPlayHead::PositionInfo positionInfo;
         juce::Array<juce::AudioProcessorParameter*> parameters;
@@ -111,12 +111,14 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
             processor->enableAllBuses();
             processor->setPlayHead(this);
             processor->addListener(this);
+
+            bool isWindowOpen = true;
             if (args->containsOption("-P|--preset")) {
                 auto preset = args->getValueForOption("-P|--preset");
-                loadState(preset == "#" ? streams::in.readString() : preset);
+                isWindowOpen = loadState(preset == "#" ? streams::in.readString() : preset);
             }
 
-            createEditorWindow();
+            if (isWindowOpen) createEditorWindow();
             writeInitInformation();
 
             startThread();
@@ -228,12 +230,7 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                         break;
                     }
                     case 3: {
-                        juce::MessageManagerLock mml(Thread::getCurrentThread());
-                        if (!mml.lockWasGained()) return;
-                        juce::MemoryBlock memory;
-                        processor->getStateInformation(memory);
-                        streams::out.write((bool)juce::File(streams::in.readString())
-                            .replaceWithData(memory.getData(), memory.getSize()));
+                        streams::out.write(saveState(streams::in.readString()));
                         streams::out.flush();
                         break;
                     }
@@ -257,21 +254,51 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
 #ifdef JUCE_WINDOWS
             parentHandle = args->containsOption("-H|--handle") ? args->getValueForOption("-H|--handle").getLargeIntValue() : 0;
 #endif
-            window = std::make_unique<PluginWindow>("[EIMHost] " + processor->getName() + " (" +
+            window = std::make_unique<plugin_window>("[EIMHost] " + processor->getName() + " (" +
                 processor->getPluginDescription().pluginFormatName + ")", component, window,
                 processor->wrapperType != juce::AudioProcessor::wrapperType_VST, parentHandle);
         }
 
-        void loadState(const juce::String& file) {
+        bool loadState(const juce::String& file) {
             juce::FileInputStream stream(file);
             if (!stream.openedOk()) {
                 std::cerr << "Failed to open file: " << file << '\n';
                 fflush(stderr);
-                return;
+                return true;
             }
+            bool isWindowOpen = false;
             juce::MemoryBlock memory;
+            switch (stream.readByte()) {
+                case 0:
+                    isWindowOpen = stream.readBool();
+                    plugin_window::x_ = stream.readInt();
+                    plugin_window::y_ = stream.readInt();
+                    plugin_window::width_ = stream.readInt();
+                    plugin_window::height_ = stream.readInt();
+            }
             stream.readIntoMemoryBlock(memory);
             processor->setStateInformation(memory.getData(), (int)memory.getSize());
+            return isWindowOpen;
+        }
+
+        bool saveState(const juce::String& file) {
+            juce::MessageManagerLock mml(Thread::getCurrentThread());
+            if (!mml.lockWasGained()) return false;
+            juce::MemoryBlock memory;
+            processor->getStateInformation(memory);
+            if (auto stream = juce::File(file).createOutputStream()) {
+                stream->setPosition(0);
+                stream->truncate();
+                stream->writeByte(0); // version
+                stream->writeBool(window != nullptr);
+                stream->writeInt(plugin_window::x_);
+                stream->writeInt(plugin_window::y_);
+                stream->writeInt(plugin_window::width_);
+                stream->writeInt(plugin_window::height_);
+                stream->write(memory.getData(), memory.getSize());
+                return true;
+            }
+            return false;
         }
 
         void writeInitInformation() {
