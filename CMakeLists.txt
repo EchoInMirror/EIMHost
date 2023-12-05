@@ -9,6 +9,11 @@ if(MSVC)
     add_definitions(-DJUCE_PLUGINHOST_VST -DJUCE_ASIO)
 endif()
 
+if (CMAKE_BUILD_TYPE MATCHES Release OR CMAKE_BUILD_TYPE MATCHES MinSizeRel)
+    add_definitions(-DNDEBUG)
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -ffast-math -ftree-vectorize")
+endif ()
+
 file(GLOB EIM_SRC_FILES "src/*.cpp" "src/*.h")
 
 add_subdirectory(JavaSharedMemory)
