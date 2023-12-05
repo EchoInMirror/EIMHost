@@ -3,7 +3,7 @@ name: Release
 on:
   release:
     types:
-      - created
+      - published
 
 env:
   BUILD_TYPE: release
@@ -32,14 +32,14 @@ jobs:
           node patch
           mkdir build
           cd build
-          cmake -G "Visual Studio 17 2022" -A x64 .. -DCMAKE_BUILD_TYPE=MinSizeRel
-          cmake --build . --config MinSizeRel
+          cmake -G "Visual Studio 17 2022" -A x64 .. -DCMAKE_BUILD_TYPE=Release
+          cmake --build . --config Release
 
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: ${{ github.workspace }}/build/EIMHost_artefacts/MinSizeRel/EIMHost.exe
+          file: ${{ github.workspace }}/build/EIMHost_artefacts/Release/EIMHost.exe
           tag: ${{ github.ref }}
           asset_name: EIMHost-x64.exe
 
@@ -48,14 +48,14 @@ jobs:
           rm -r build
           mkdir build
           cd build
-          cmake -G "Visual Studio 17 2022" -A Win32 .. -DCMAKE_BUILD_TYPE=MinSizeRel
-          cmake --build . --config MinSizeRel
+          cmake -G "Visual Studio 17 2022" -A Win32 .. -DCMAKE_BUILD_TYPE=Release
+          cmake --build . --config Release
 
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: ${{ github.workspace }}/build/EIMHost_artefacts/MinSizeRel/EIMHost.exe
+          file: ${{ github.workspace }}/build/EIMHost_artefacts/Release/EIMHost.exe
           tag: ${{ github.ref }}
           asset_name: EIMHost-x86.exe
 
@@ -83,15 +83,15 @@ jobs:
           mkdir build
           cd build
           brew install ninja
-          cmake -G Ninja .. -DCMAKE_BUILD_TYPE=MinSizeRel
-          cmake --build . --config MinSizeRel
-          cd EIMHost_artefacts/MinSizeRel && zip -r -q EIMHost.zip EIMHost.app
+          cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release
+          cmake --build . --config Release
+          cd EIMHost_artefacts/Release && zip -r -q EIMHost.zip EIMHost.app
 
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: ${{ github.workspace }}/build/EIMHost_artefacts/MinSizeRel/EIMHost.zip
+          file: ${{ github.workspace }}/build/EIMHost_artefacts/Release/EIMHost.zip
           tag: ${{ github.ref }}
           asset_name: EIMHost-MacOS.zip
 
@@ -118,13 +118,13 @@ jobs:
           mkdir build
           cd build
           sudo apt-get install ninja-build libasound2-dev ladspa-sdk libfreetype6-dev libx11-dev libxcomposite-dev libxcursor-dev libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev
-          cmake -G Ninja .. -DCMAKE_BUILD_TYPE=MinSizeRel
-          cmake --build . --config MinSizeRel
+          cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release
+          cmake --build . --config Release
 
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: ${{ github.workspace }}/build/EIMHost_artefacts/MinSizeRel/EIMHost
+          file: ${{ github.workspace }}/build/EIMHost_artefacts/Release/EIMHost
           tag: ${{ github.ref }}
           asset_name: EIMHost-Linux
