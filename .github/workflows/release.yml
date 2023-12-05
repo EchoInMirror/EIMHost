@@ -97,7 +97,8 @@ jobs:
 
   build-macos-m1:
     name: Build (MacOS Apple Silicon)
-    runs-on: macos-latest
+    runs-on: macos-latest-xlarge
+    if: ${{ false }}
 
     steps:
       - name: Check out git repository
