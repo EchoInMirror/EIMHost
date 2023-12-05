@@ -75,7 +75,7 @@ jobs:
           node-version: 18
 
       - name: Set version
-        run: node -e "const fs=require('fs');fs.writeFileSync('CMakeLists.txt',fs.readFileSync('CMakeLists.txt','utf-8').replace(/1\.0\.0/g,'${{ ggithub.event.release.tag_name }}'.replace('refs/tags/','')))"
+        run: node -e "const fs=require('fs');fs.writeFileSync('CMakeLists.txt',fs.readFileSync('CMakeLists.txt','utf-8').replace(/1\.0\.0/g,'${{ github.event.release.tag_name }}'.replace('refs/tags/','')))"
 
       - name: Build
         run: |
@@ -111,7 +111,7 @@ jobs:
           node-version: 18
 
       - name: Set version
-        run: node -e "const fs=require('fs');fs.writeFileSync('CMakeLists.txt',fs.readFileSync('CMakeLists.txt','utf-8').replace(/1\.0\.0/g,'${{ ggithub.event.release.tag_name }}'.replace('refs/tags/','')))"
+        run: node -e "const fs=require('fs');fs.writeFileSync('CMakeLists.txt',fs.readFileSync('CMakeLists.txt','utf-8').replace(/1\.0\.0/g,'${{ github.event.release.tag_name }}'.replace('refs/tags/','')))"
 
       - name: Build
         run: |
