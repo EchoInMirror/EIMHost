@@ -25,7 +25,7 @@ jobs:
           node-version: 18
 
       - name: Set version
-        run: node -e "const fs=require('fs');fs.writeFileSync('CMakeLists.txt',fs.readFileSync('CMakeLists.txt','utf-8').replace(/1\.0\.0/g,'${{ github.ref }}'.replace('refs/tags/','')))"
+        run: node -e "const fs=require('fs');fs.writeFileSync('CMakeLists.txt',fs.readFileSync('CMakeLists.txt','utf-8').replace(/1\.0\.0/g,'${{ github.event.release.tag_name }}'.replace('refs/tags/','')))"
 
       - name: Build x64
         run: |
@@ -60,7 +60,7 @@ jobs:
           asset_name: EIMHost-x86.exe
 
   build-macos:
-    name: Build (MacOS)
+    name: Build (MacOS Intel)
     runs-on: macos-latest
 
     steps:
@@ -75,7 +75,43 @@ jobs:
           node-version: 18
 
       - name: Set version
-        run: node -e "const fs=require('fs');fs.writeFileSync('CMakeLists.txt',fs.readFileSync('CMakeLists.txt','utf-8').replace(/1\.0\.0/g,'${{ github.ref }}'.replace('refs/tags/','')))"
+        run: node -e "const fs=require('fs');fs.writeFileSync('CMakeLists.txt',fs.readFileSync('CMakeLists.txt','utf-8').replace(/1\.0\.0/g,'${{ ggithub.event.release.tag_name }}'.replace('refs/tags/','')))"
+
+      - name: Build
+        run: |
+          node patch
+          mkdir build
+          cd build
+          brew install ninja
+          cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release
+          cmake --build . --config Release
+          cd EIMHost_artefacts/Release && zip -r -q EIMHost.zip EIMHost.app
+
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ${{ github.workspace }}/build/EIMHost_artefacts/Release/EIMHost.zip
+          tag: ${{ github.ref }}
+          asset_name: EIMHost-MacOS-x68.zip
+
+  build-macos-m1:
+    name: Build (MacOS Apple Silicon)
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Install Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Set version
+        run: node -e "const fs=require('fs');fs.writeFileSync('CMakeLists.txt',fs.readFileSync('CMakeLists.txt','utf-8').replace(/1\.0\.0/g,'${{ ggithub.event.release.tag_name }}'.replace('refs/tags/','')))"
 
       - name: Build
         run: |
@@ -111,7 +147,7 @@ jobs:
           node-version: 18
 
       - name: Set version
-        run: node -e "const fs=require('fs');fs.writeFileSync('CMakeLists.txt',fs.readFileSync('CMakeLists.txt','utf-8').replace(/1\.0\.0/g,'${{ github.ref }}'.replace('refs/tags/','')))"
+        run: node -e "const fs=require('fs');fs.writeFileSync('CMakeLists.txt',fs.readFileSync('CMakeLists.txt','utf-8').replace(/1\.0\.0/g,'${{ github.event.release.tag_name }}'.replace('refs/tags/','')))"
 
       - name: Build
         run: |
