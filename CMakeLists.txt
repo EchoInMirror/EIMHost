@@ -78,17 +78,18 @@ if(MSVC)
 endif()
 
 target_compile_definitions(${PROJECT_NAME}
-    PRIVATE
+    PUBLIC
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:EIMHost,JUCE_PRODUCT_NAME>"
         JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:EIMHost,JUCE_VERSION>")
 
 target_link_libraries(${PROJECT_NAME}
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_lto_flags
+        juce::juce_recommended_warning_flags
     PRIVATE
         juce::juce_gui_extra
         juce::juce_audio_utils
-        java_shared_memory
-        juce::juce_recommended_config_flags
-        juce::juce_recommended_lto_flags
-        juce::juce_recommended_warning_flags)
+        java_shared_memory)
