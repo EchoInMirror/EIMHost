@@ -60,7 +60,7 @@ jobs:
           asset_name: EIMHost-x86.exe
 
   build-macos:
-    name: Build (MacOS Intel)
+    name: Build (MacOS)
     runs-on: macos-latest
 
     steps:
@@ -95,32 +95,12 @@ jobs:
           tag: ${{ github.ref }}
           asset_name: EIMHost-MacOS-x68.zip
 
-  build-macos-m1:
-    name: Build (MacOS Apple Silicon)
-    runs-on: macos-latest-xlarge
-    if: ${{ false }}
-
-    steps:
-      - name: Check out git repository
-        uses: actions/checkout@v3
-        with:
-          submodules: true
-
-      - name: Install Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: 18
-
-      - name: Set version
-        run: node -e "const fs=require('fs');fs.writeFileSync('CMakeLists.txt',fs.readFileSync('CMakeLists.txt','utf-8').replace(/1\.0\.0/g,'${{ github.event.release.tag_name }}'.replace('refs/tags/','')))"
-
-      - name: Build
+      - name: Build apple silicon version
         run: |
-          node patch
+          rm -r build
           mkdir build
           cd build
-          brew install ninja
-          cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release
+          cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64
           cmake --build . --config Release
           cd EIMHost_artefacts/Release && zip -r -q EIMHost.zip EIMHost.app
 

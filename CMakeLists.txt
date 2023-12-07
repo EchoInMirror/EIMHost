@@ -11,8 +11,11 @@ endif()
 
 if (CMAKE_BUILD_TYPE MATCHES Release OR CMAKE_BUILD_TYPE MATCHES MinSizeRel)
     add_definitions(-DNDEBUG)
-    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -ffast-math -ftree-vectorize")
-endif ()
+
+    if (NOT MSVC)
+        SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -ffast-math -ftree-vectorize")
+    endif()
+endif()
 
 file(GLOB EIM_SRC_FILES "src/*.cpp" "src/*.h")
 
