@@ -5,6 +5,17 @@
 namespace juce { extern void initialiseNSApplication(); }
 #endif
 
+class simple_msgbox : private juce::ModalComponentManager::Callback {
+public:
+    void modalStateFinished(int) override { juce::MessageManager::getInstance()->stopDispatchLoop(); }
+    static void show(const juce::String& text) {
+        juce::initialiseJuce_GUI();
+        juce::NativeMessageBox::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "EIMHost", text, nullptr, new simple_msgbox);
+        juce::MessageManager::getInstance()->runDispatchLoop();
+        juce::shutdownJuce_GUI();
+    }
+};
+
 int main(int argc, char* argv[]) {
     std::ios::sync_with_stdio(false);
     std::cin.tie(nullptr);
@@ -123,9 +134,10 @@ int main(int argc, char* argv[]) {
 #else
         auto javaFile = "java";
 #endif
-        juce::File file(juce::String("./jre/bin/") + javaFile);
+        auto currentExec = juce::File::getSpecialLocation(juce::File::SpecialLocationType::currentExecutableFile);
+        auto file = currentExec.getSiblingFile("jre/bin").getChildFile(javaFile);
         if (file.exists()) {
-            juce::File vmoptions("./.vmoptions");
+            auto vmoptions = currentExec.getSiblingFile(".vmoptions");
             juce::StringArray arr;
             if (vmoptions.exists()) vmoptions.readLines(arr);
             arr.insert(0, file.getFullPathName());
@@ -134,8 +146,9 @@ int main(int argc, char* argv[]) {
             juce::ChildProcess process;
             process.start(arr);
         } else {
-            std::cout << "Cannot find java!\n";
-            fflush(stdout);
+            std::cerr << "Cannot find java!\n";
+            fflush(stderr);
+            simple_msgbox::show("Java Runtime Environment not found.\nPlease install Java Runtime Environment 21 or higher.");
         }
     }
     return 0;
