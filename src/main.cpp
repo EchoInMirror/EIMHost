@@ -9,6 +9,8 @@ class simple_msgbox : private juce::ModalComponentManager::Callback {
 public:
     void modalStateFinished(int) override { juce::MessageManager::getInstance()->stopDispatchLoop(); }
     static void show(const juce::String& text) {
+        std::cerr << text << '\n';
+        fflush(stderr);
         juce::initialiseJuce_GUI();
         juce::NativeMessageBox::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "EIMHost", text, nullptr, new simple_msgbox);
         juce::MessageManager::getInstance()->runDispatchLoop();
@@ -131,25 +133,39 @@ int main(int argc, char* argv[]) {
     } else {
 #ifdef JUCE_WINDOWS
         auto javaFile = "java.exe";
+        auto jarFile = "EchoInMirror-win64.jar";
+#elifdef JUCE_MAC
+        auto javaFile = "java";
+#ifdef __aarch64__
+        auto jarFile = "EchoInMirror-macos.jar";
+#else
+        auto jarFile = "EchoInMirror-macos-x64.jar";
+#endif
 #else
         auto javaFile = "java";
+        auto jarFile = "EchoInMirror-linux.jar";
 #endif
         auto currentExec = juce::File::getSpecialLocation(juce::File::SpecialLocationType::currentExecutableFile);
         auto file = currentExec.getSiblingFile("jre/bin").getChildFile(javaFile);
-        if (file.exists()) {
-            auto vmoptions = currentExec.getSiblingFile(".vmoptions");
-            juce::StringArray arr;
-            if (vmoptions.exists()) vmoptions.readLines(arr);
-            arr.insert(0, file.getFullPathName());
-            arr.add("-jar");
-            arr.add("EchoInMirror.jar");
-            juce::ChildProcess process;
-            process.start(arr);
-        } else {
-            std::cerr << "Cannot find java!\n";
-            fflush(stderr);
+        if (!file.exists()) {
             simple_msgbox::show("Java Runtime Environment not found.\nPlease install Java Runtime Environment 21 or higher.");
+            return 1;
         }
+
+        auto jar = currentExec.getSiblingFile(jarFile);
+        if (!jar.exists()) jar = currentExec.getSiblingFile("EchoInMirror.jar");
+        if (!jar.exists()) {
+            simple_msgbox::show("Cannot find EchoInMirror.jar!\nPlease make sure EchoInMirror.jar is in the same directory as EchoInMirror.");
+            return 2;
+        }
+        auto vmoptions = currentExec.getSiblingFile(".vmoptions");
+        juce::StringArray arr;
+        if (vmoptions.exists()) vmoptions.readLines(arr);
+        arr.insert(0, file.getFullPathName());
+        arr.add("-jar");
+        arr.add(jar.getFullPathName());
+        juce::ChildProcess process;
+        process.start(arr);
     }
     return 0;
 }
