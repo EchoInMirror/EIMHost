@@ -134,7 +134,7 @@ int main(int argc, char* argv[]) {
 #ifdef JUCE_WINDOWS
         auto javaFile = "java.exe";
         auto jarFile = "EchoInMirror-win64.jar";
-#elifdef JUCE_MAC
+#elif JUCE_MAC
         auto javaFile = "java";
 #ifdef __aarch64__
         auto jarFile = "EchoInMirror-macos.jar";
