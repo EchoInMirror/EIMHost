@@ -16,7 +16,7 @@ constexpr auto PARAMETER_IS_ORIENTATION_INVERTED = 0b10000;
 
 namespace eim {
 class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, public juce::AudioProcessorListener,
-        private juce::Thread, private juce::AsyncUpdater {
+    private juce::Thread, private juce::AsyncUpdater, private juce::Value::Listener{
     public:
         plugin_host() : juce::AudioPlayHead(), juce::Thread("IO Thread") { }
         ~plugin_host() override {
@@ -80,7 +80,8 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
         std::unordered_map<int, std::pair<float, juce::uint32>> parameterChanges;
         float* prevParameterChanges{};
         int prevParameterChangesCnt = 0;
-        bool isRealtime = true, shouldWriteInformation = false, shouldWriteLatency = false;
+        bool isRealtime = true, bypass = false,
+            shouldWriteInformation = false, shouldWriteLatency = false, shouldWriteBypass = false;
         int sampleRate = 48000, bufferSize = 1024;
         int hostBufferPos = 0;
         juce::int8 hostBuffer[8192] = {0};
@@ -128,7 +129,7 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
             juce::int8 id;
             while (!threadShouldExit() && streams::in.read(id) == 1) {
                 switch (id) {
-                    case 0: {
+                    case 0: { // init
                         bool enabledSharedMemory;
                         streams::in >> sampleRate >> bufferSize >> enabledSharedMemory;
                         juce::MessageManagerLock mml(Thread::getCurrentThread());
@@ -154,7 +155,7 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                         processor->prepareToPlay(sampleRate, bufferSize);
                         break;
                     }
-                    case 1: {
+                    case 1: { // process block
                         double bpm;
                         juce::int8 numInputChannels, numOutputChannels = 0, flags;
                         juce::int64 timeInSamples;
@@ -210,34 +211,35 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                         }
                         processor->processBlock(buffer, buf);
 
-                        if (shouldWriteInformation) writeInitInformation();
-                        if (shouldWriteLatency) {
-                            streams::out.writeAction(4);
-                            streams::out << (juce::int32)processor->getLatencySamples();
-                            shouldWriteLatency = false;
-                        }
+                        writeNotify(false);
 
                         streams::out.writeAction(1);
                         if (!shm) for (int i = 0; i < numOutputChannels; i++) streams::out.writeArray(buffer.getReadPointer(i), bufferSize);
                         streams::out.flush();
                         break;
                     }
-                    case 2: {
+                    case 2: { // open control panel
                         juce::MessageManager::callAsync([this] {
                             if (window == nullptr) createEditorWindow();
                             else window.reset(nullptr);
                         });
                         break;
                     }
-                    case 3: {
+                    case 3: { // save state
                         streams::out.write(saveState(streams::in.readString()));
                         streams::out.flush();
                         break;
                     }
-                    case 4: {
+                    case 4: { // load state
                         juce::MessageManagerLock mml(Thread::getCurrentThread());
                         if (!mml.lockWasGained()) return;
                         loadState(streams::in.readString());
+                        break;
+                    }
+                    case 5: { // bypass state change
+                        writeNotify(true);
+                        streams::out.writeAction(1);
+                        streams::out.flush();
                         break;
                     }
                     default:; // unknown command
@@ -257,6 +259,36 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
             window = std::make_unique<plugin_window>("[EIMHost] " + processor->getName() + " (" +
                 processor->getPluginDescription().pluginFormatName + ")", component, window,
                 processor->wrapperType != juce::AudioProcessor::wrapperType_VST, parentHandle);
+            window->getBypassState().addListener(this);
+        }
+
+        void writeNotify(bool bypassNewValue) {
+            if (shouldWriteInformation) writeInitInformation();
+            if (shouldWriteLatency) {
+                streams::out.writeAction(4);
+                streams::out << (juce::int32)processor->getLatencySamples();
+                shouldWriteLatency = false;
+            }
+            if (shouldWriteBypass) {
+                streams::out.writeAction(5);
+                streams::out << bypass;
+                shouldWriteBypass = false;
+            } else if (bypassNewValue != bypass) {
+                bypass = bypassNewValue;
+                if (window != nullptr) {
+                    juce::MessageManagerLock mml(Thread::getCurrentThread());
+                    if (!mml.lockWasGained()) return;
+                    window->setBypass(bypassNewValue);
+                }
+            }
+        }
+
+        void valueChanged(juce::Value& value) override {
+            bool v = !value.getValue();
+            if (bypass != v) {
+                bypass = v;
+                shouldWriteBypass = true;
+            }
         }
 
         bool loadState(const juce::String& file) {
