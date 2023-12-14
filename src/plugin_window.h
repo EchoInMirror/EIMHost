@@ -106,9 +106,16 @@ private:
         component->setBounds(0, TITLE_BAR_HEIGHT, getWidth(), getHeight() - TITLE_BAR_HEIGHT);
 
         bypassButton.setTopLeftPosition(16, TITLE_BAR_TOP_PADDING);
-        presetName.setSize(static_cast<int>(juce::jmin(static_cast<float>(getWidth()) / 4.0f * 3.0f, 300.0f)), 32);
-        presetName.setTopLeftPosition(getWidth() / 2 - presetName.getWidth() / 2, TITLE_BAR_TOP_PADDING);
-        stateSwitchers.setTopLeftPosition(getWidth() - stateSwitchers.getWidth() - 16, TITLE_BAR_TOP_PADDING);
+        stateSwitchers.setTopLeftPosition(getWidth() - stateSwitchers.getWidth() - 8, TITLE_BAR_TOP_PADDING);
+        presetName.setSize(juce::jmin(
+            (int)(getWidth() / 3),
+			getWidth() - bypassButton.getWidth() - stateSwitchers.getWidth() - 46
+        ), 32);
+        presetName.setTopLeftPosition(
+			getWidth() / 2 + presetName.getWidth() / 2 > getWidth() - stateSwitchers.getWidth() - 16 ?
+			32 + bypassButton.getWidth() : getWidth() / 2 - presetName.getWidth() / 2,
+            TITLE_BAR_TOP_PADDING
+        );
     }
 
     void componentMovedOrResized(juce::Component& comp, bool, bool wasResized) override {
@@ -122,7 +129,7 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(plugin_decorate_component)
 };
 
-class plugin_window : public juce::ResizableWindow, private juce::ComponentListener {
+class plugin_window : public juce::ResizableWindow {
 public:
     static int width_, height_, x_, y_;
 
@@ -173,8 +180,6 @@ public:
 private:
     std::unique_ptr<plugin_window>& thisWindow;
     plugin_decorate_component decorate_component;
-    
-    [[nodiscard]] float getDesktopScaleFactor() const override { return 1.0f; }
 
     void moved() override {
         juce::ResizableWindow::moved();
@@ -194,16 +199,6 @@ private:
     }
 
     void userTriedToCloseWindow() override { thisWindow.reset(nullptr); }
-
-    void componentMovedOrResized(juce::Component& comp, bool, bool wasResized) override {
-        if (wasResized) {
-            auto width = comp.getWidth();
-            auto height = comp.getHeight();
-            if (width != getWidth() || height != getHeight()) {
-                setBounds(0, 0, width, height);
-            }
-        }
-    }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(plugin_window)
 };
