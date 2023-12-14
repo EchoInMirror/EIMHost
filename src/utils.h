@@ -18,14 +18,14 @@ namespace eim {
         class output_stream {
         public:
             output_stream() {
-                setvbuf(oldStdout, nullptr, _IOFBF, 4096);
-                juce::ignoreUnused(freopen(nullptr, "wb", oldStdout));
+                setvbuf(oldStdout, nullptr, _IOFBF, 10240);
+                juce::ignoreUnused(freopen(0, "wb", oldStdout));
 #ifdef JUCE_WINDOWS
                 juce::ignoreUnused(_setmode(_fileno(oldStdout), _O_BINARY));
 #endif
             }
 
-            void write(bool var) { write((char)var); }
+            void write(bool var) { write((unsigned char)var); }
             template <typename T> void write(T var) { std::fwrite(&var, sizeof(T), 1, oldStdout); }
             void write(const juce::Array<juce::String>& var) {
                 writeVarInt(var.size());
@@ -44,18 +44,18 @@ namespace eim {
 
             void writeVarInt(juce::int32 var) {
                 while (var >= 0x80) {
-                    write((char)((var & 0x7F) | 0x80));
+                    write((unsigned char)((var & 0x7F) | 0x80));
                     var >>= 7;
                 }
-                write((char)var);
+                write((unsigned char)var);
             }
 
             [[maybe_unused]] void writeVarLong(juce::int64 var) {
                 while (var >= 0x80) {
-                    write((char)((var & 0x7F) | 0x80));
+                    write((unsigned char)((var & 0x7F) | 0x80));
                     var >>= 7;
                 }
-                write((char)var);
+                write((unsigned char)var);
             }
             void write(const juce::String& str) {
                 if (str.isEmpty()) {
@@ -63,9 +63,9 @@ namespace eim {
                     return;
                 }
                 auto raw = str.toRawUTF8();
-                auto len = (int)strlen(raw);
-                writeVarInt(len);
-                std::fwrite(raw, sizeof(char), (size_t) len, oldStdout);
+                auto len = strlen(raw);
+                writeVarInt((int)len);
+                std::fwrite(raw, sizeof(char), len, oldStdout);
             }
             void writeAction(juce::int8 action) { write(action); }
             void writeByteOrderMessage() {
@@ -91,7 +91,7 @@ namespace eim {
 
         private:
 #ifdef JUCE_WINDOWS
-            FILE* oldStdout = _fdopen(_dup(1), "wb");
+            FILE* oldStdout = _fdopen(_dup(_fileno(stdout)), "wb");
 #else
             FILE *oldStdout = fdopen(dup(1), "wb");
 #endif
@@ -100,15 +100,15 @@ namespace eim {
         class input_stream {
         public:
             input_stream() {
-                setvbuf(stdin, nullptr, _IOFBF, 4096);
-                juce::ignoreUnused(freopen(nullptr, "rb", stdin));
+                setvbuf(stdin, nullptr, _IOFBF, 10240);
+                juce::ignoreUnused(freopen(0, "rb", stdin));
 #ifdef JUCE_WINDOWS
                 juce::ignoreUnused(_setmode(_fileno(stdin), _O_BINARY));
 #endif
             }
 
             static bool readBool() {
-                char var;
+                unsigned char var;
                 auto ret = std::fread(&var, 1, 1, stdin);
                 return ret && var != 0;
             }
@@ -123,7 +123,7 @@ namespace eim {
             void readVarInt(juce::int32& var) {
                 var = 0;
                 for (int i = 0; i <= 28; i += 7) {
-                    char b;
+                    unsigned char b;
                     read(b);
                     var |= (juce::int32)(b & 0x7F) << i;
                     if ((b & 0x80) == 0) return;
@@ -132,7 +132,7 @@ namespace eim {
             void readVarLong(juce::int64& var) {
                 var = 0;
                 for (int i = 0; i < 64; i += 7) {
-                    char b;
+                    unsigned char b;
                     read(b);
                     var |= (juce::int64)(b & 0x7F) << i;
                     if ((b & 0x80) == 0) return;

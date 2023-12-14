@@ -48,8 +48,8 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
 
         void transportPlay(bool shouldStartPlaying) override {
             if (!mtx.try_lock()) return;
-            writeToHostBuffer((char)2);
-            writeToHostBuffer((char)shouldStartPlaying);
+            writeToHostBuffer((unsigned char)2);
+            writeToHostBuffer((unsigned char)shouldStartPlaying);
             mtx.unlock();
         }
 
@@ -117,6 +117,7 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
             if (args->containsOption("-P|--preset")) {
                 auto preset = args->getValueForOption("-P|--preset");
                 isWindowOpen = loadState(preset == "#" ? streams::in.readString() : preset);
+				std::cerr << "openwindow: " << (int)isWindowOpen << std::endl;
             }
 
             if (isWindowOpen) createEditorWindow();
@@ -193,6 +194,7 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
 
                         int numParameters;
                         streams::in.readVarInt(numParameters);
+                        
                         for (int i = 0; i < numParameters; i++) {
                             int pid;
                             float value;
@@ -200,20 +202,11 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                             streams::in >> value;
                             if (pid != 9999999) if (auto* param = parameters[pid]) param->setValue(value);
                         }
-                        auto hasParameterChanges = !parameterChanges.empty();
-                        if ((hostBufferPos > 0 || hasParameterChanges) && mtx.try_lock()) {
-                            if (hostBufferPos > 0) {
-                                streams::out.writeArray(hostBuffer, hostBufferPos);
-                                hostBufferPos = 0;
-                            }
-                            if (hasParameterChanges) writeAllParameterChanges();
-                            mtx.unlock();
-                        }
+                        
                         processor->processBlock(buffer, buf);
 
                         writeNotify(false);
-
-                        streams::out.writeAction(1);
+                        
                         if (!shm) for (int i = 0; i < numOutputChannels; i++) streams::out.writeArray(buffer.getReadPointer(i), bufferSize);
                         streams::out.flush();
                         break;
@@ -238,8 +231,6 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                     }
                     case 5: { // bypass state change
                         writeNotify(true);
-                        streams::out.writeAction(1);
-                        streams::out.flush();
                         break;
                     }
                     default:; // unknown command
@@ -263,6 +254,16 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
         }
 
         void writeNotify(bool bypassNewValue) {
+            auto hasParameterChanges = !parameterChanges.empty();
+            if ((hostBufferPos > 0 || hasParameterChanges) && mtx.try_lock()) {
+                if (hostBufferPos > 0) {
+                    streams::out.writeArray(hostBuffer, hostBufferPos);
+                    hostBufferPos = 0;
+                }
+                if (hasParameterChanges) writeAllParameterChanges();
+                mtx.unlock();
+            }
+            
             if (shouldWriteInformation) writeInitInformation();
             if (shouldWriteLatency) {
                 streams::out.writeAction(4);
@@ -281,6 +282,8 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                     window->setBypass(bypassNewValue);
                 }
             }
+            streams::out.writeAction(1);
+            streams::out.flush();
         }
 
         void valueChanged(juce::Value& value) override {
@@ -339,22 +342,27 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
             streams::out.writeAction(0);
             streams::out << (juce::int8)processor->getTotalNumInputChannels()
                 << (juce::int8)processor->getTotalNumOutputChannels() << (juce::int32)processor->getLatencySamples();
-            streams::out.writeVarInt(parameters.size());
-            for (auto p : parameters) {
-                prevParameterChanges[p->getParameterIndex()] = p->getValue();
+            auto size = parameters.size();
+            streams::out.writeVarInt(size);
+            for (int i = 0; i < size; i++) {
+				auto p = parameters[i];
+                auto value = p->getValue();
+                prevParameterChanges[p->getParameterIndex()] = value;
                 juce::int8 flags = 0;
                 if (p->isAutomatable()) flags |= PARAMETER_IS_AUTOMATABLE;
                 if (p->isDiscrete()) flags |= PARAMETER_IS_DISCRETE;
                 if (p->isBoolean()) flags |= PARAMETER_IS_BOOLEAN;
                 if (p->isMetaParameter()) flags |= PARAMETER_IS_META;
                 if (p->isOrientationInverted()) flags |= PARAMETER_IS_ORIENTATION_INVERTED;
-
-                streams::out << flags << p->getValue() << p->getDefaultValue() << (int)p->getCategory()
-                    << p->getNumSteps() << p->getName(1024) << p->getLabel();
+                
+                streams::out << flags << value << p->getDefaultValue() << (int)p->getCategory()
+                    << p->getNumSteps() << p->getName(64) << p->getLabel();
 
                 auto valueStrings = p->getAllValueStrings();
-                if (valueStrings.size() > 64) streams::out.writeVarInt(0);
+                auto size = valueStrings.size();
+                if (size > 64 || size == 0 || (size == 1 && valueStrings[0].isEmpty())) streams::out.writeVarInt(0);
                 else streams::out << valueStrings;
+				if (i > 30) streams::out.flush(); // avoid buffer overflow
             }
             streams::out.flush();
         }

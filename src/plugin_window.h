@@ -3,6 +3,14 @@
 
 #ifdef JUCE_WINDOWS
 #include <Windows.h>
+#include <dwmapi.h>
+#pragma comment(lib, "dwmapi.lib")
+
+constexpr int TITLE_BAR_TOP_PADDING = 0;
+constexpr int TITLE_BAR_HEIGHT = 40;
+#else
+constexpr int TITLE_BAR_TOP_PADDING = 30;
+constexpr int TITLE_BAR_HEIGHT = 70;
 #endif
 
 const char* SAVE_ICON = R"(<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path d="M840-680v480q0 33-23.5 56.5T760-120H200q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h480l160 160Zm-80 34L646-760H200v560h560v-446ZM480-240q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35ZM240-560h360v-160H240v160Zm-40-86v446-560 114Z"/></svg>)";
@@ -48,7 +56,7 @@ class plugin_decorate_component : public juce::Component, private juce::Componen
 public:
     explicit plugin_decorate_component(juce::AudioProcessorEditor* _component, const juce::String& name) :
         juce::Component(name), component(_component), stateSwitchers("State Switchers", component->getAudioProcessor()) {
-        setBounds(0, 0, component->getWidth(), getTitleBarHeight() + component->getHeight());
+        setBounds(0, 0, component->getWidth(), TITLE_BAR_HEIGHT + component->getHeight());
         component->addComponentListener(this);
         addAndMakeVisible(component);
 
@@ -66,14 +74,12 @@ public:
         plugin_decorate_component::resized();
     }
 
-    [[nodiscard]] static int getTitleBarHeight() { return 70; }
-
     void setFocused(bool focus) {
         isFocused = focus;
         repaint();
     }
 
-    void setBypass(bool bypass) { bypassButton.setToggleState(!bypass, juce::sendNotification); }
+    void setBypass(bool bypass) { bypassButton.setToggleState(!bypass, juce::dontSendNotification); }
     [[nodiscard]] juce::Value& getBypassState() { return bypassButton.getToggleStateValue(); }
 
     ~plugin_decorate_component() override {
@@ -88,25 +94,28 @@ private:
 
     void paint(juce::Graphics& g) override {
         g.fillAll(juce::Colour(0xff28262e));
+
+#ifndef JUCE_WINDOWS
         g.setColour(juce::Colour(isFocused ? 0xafffffff : 0x3fffffff));
         g.setFont(g.getCurrentFont().withStyle(juce::Font::bold).withHorizontalScale(1.04F));
-        g.drawText(getName(), 0, 0, getWidth(), 30, juce::Justification::centred, true);
+        g.drawText(getName(), 0, 0, getWidth(), TITLE_BAR_TOP_PADDING, juce::Justification::centred, true);
+#endif
     }
 
     void resized() override {
-        component->setBounds(0, getTitleBarHeight(), getWidth(), getHeight() - getTitleBarHeight());
+        component->setBounds(0, TITLE_BAR_HEIGHT, getWidth(), getHeight() - TITLE_BAR_HEIGHT);
 
-        bypassButton.setTopLeftPosition(16, 30);
+        bypassButton.setTopLeftPosition(16, TITLE_BAR_TOP_PADDING);
         presetName.setSize(static_cast<int>(juce::jmin(static_cast<float>(getWidth()) / 4.0f * 3.0f, 300.0f)), 32);
-        presetName.setTopLeftPosition(getWidth() / 2 - presetName.getWidth() / 2, 30);
-        stateSwitchers.setTopLeftPosition(getWidth() - stateSwitchers.getWidth() - 16, 30);
+        presetName.setTopLeftPosition(getWidth() / 2 - presetName.getWidth() / 2, TITLE_BAR_TOP_PADDING);
+        stateSwitchers.setTopLeftPosition(getWidth() - stateSwitchers.getWidth() - 16, TITLE_BAR_TOP_PADDING);
     }
 
     void componentMovedOrResized(juce::Component& comp, bool, bool wasResized) override {
         if (wasResized) {
             auto width = comp.getWidth();
-            auto height = comp.getHeight() + getTitleBarHeight();
-            if (width != getWidth() || height != getHeight()) setBounds(0, getTitleBarHeight(), width, height);
+            auto height = comp.getHeight() + TITLE_BAR_HEIGHT;
+            if (width != getWidth() || height != getHeight()) setBounds(0, TITLE_BAR_HEIGHT, width, height);
         }
     }
 
@@ -139,14 +148,15 @@ public:
         plugin_window::setVisible(true);
         
 #ifdef JUCE_WINDOWS
-        if (parentHandle) addToDesktop(getDesktopWindowStyleFlags(), (HWND)(LONG_PTR)parentHandle);
+        if (parentHandle) addToDesktop(getDesktopWindowStyleFlags(), (HWND) parentHandle);
+        auto handle = (HWND)this->getWindowHandle();
+        long color = 0x002e2628;
+        DwmSetWindowAttribute(handle, 35, &color, 4);
+        color = 0x004f4549;
+        DwmSetWindowAttribute(handle, 34, &color, 4);
 #else
         setAlwaysOnTop(true);
 #endif
-    }
-
-    ~plugin_window() override {
-        clearContentComponent();
     }
     
     [[nodiscard]] int getDesktopWindowStyleFlags() const override {
