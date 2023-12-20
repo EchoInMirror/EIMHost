@@ -117,7 +117,6 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
             if (args->containsOption("-P|--preset")) {
                 auto preset = args->getValueForOption("-P|--preset");
                 isWindowOpen = loadState(preset == "#" ? streams::in.readString() : preset);
-				std::cerr << "openwindow: " << (int)isWindowOpen << std::endl;
             }
 
             if (isWindowOpen) createEditorWindow();
