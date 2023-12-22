@@ -32,7 +32,7 @@ jobs:
           node patch
           mkdir build
           cd build
-          cmake -G "Visual Studio 17 2022" -A x64 -T ClangCL .. -DCMAKE_BUILD_TYPE=Release
+          cmake -G "Visual Studio 17 2022" -A x64 .. -DCMAKE_BUILD_TYPE=Release
           cmake --build . --config Release
 
       - name: Upload binaries to release
@@ -48,7 +48,7 @@ jobs:
           rm -r build
           mkdir build
           cd build
-          cmake -G "Visual Studio 17 2022" -A Win32 -T ClangCL .. -DCMAKE_BUILD_TYPE=Release
+          cmake -G "Visual Studio 17 2022" -A Win32 .. -DCMAKE_BUILD_TYPE=Release
           cmake --build . --config Release
 
       - name: Upload binaries to release
@@ -83,7 +83,7 @@ jobs:
           mkdir build
           cd build
           brew install ninja
-          cmake -G Ninja -T ClangCL .. -DCMAKE_BUILD_TYPE=Release
+          cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release
           cmake --build . --config Release
           cd EIMHost_artefacts/Release && zip -r -q EIMHost.zip EIMHost.app
 
@@ -100,7 +100,7 @@ jobs:
           rm -r build
           mkdir build
           cd build
-          cmake -G Ninja -T ClangCL .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64
+          cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64
           cmake --build . --config Release
           cd EIMHost_artefacts/Release && zip -r -q EIMHost.zip EIMHost.app
 
@@ -135,7 +135,7 @@ jobs:
           mkdir build
           cd build
           sudo apt-get install ninja-build libasound2-dev ladspa-sdk libfreetype6-dev libx11-dev libxcomposite-dev libxcursor-dev libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev
-          cmake -G Ninja -T ClangCL .. -DCMAKE_BUILD_TYPE=Release
+          cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release
           cmake --build . --config Release
 
       - name: Upload binaries to release
