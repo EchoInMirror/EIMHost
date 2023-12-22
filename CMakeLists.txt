@@ -5,17 +5,13 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set(CMAKE_CXX_STANDARD 23)
 add_definitions(-DJUCE_USE_MP3AUDIOFORMAT -DJUCE_PLUGINHOST_VST3 -DJUCE_PLUGINHOST_AU -DJUCE_PLUGINHOST_LADSPA -DJUCE_PLUGINHOST_LV2 -DJUCE_PLUGINHOST_ARA -DVST_LOGGING=0)
 
-if(MSVC)
-    add_definitions(-DJUCE_PLUGINHOST_VST -DJUCE_ASIO)
-    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup")
+if(NOT MSVC)
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -ffast-math -ftree-vectorize")
 endif()
 
-if (CMAKE_BUILD_TYPE MATCHES Release OR CMAKE_BUILD_TYPE MATCHES MinSizeRel)
-    add_definitions(-DNDEBUG)
-
-    if(NOT MSVC)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -ffast-math -ftree-vectorize")
-    endif()
+if(WIN32)
+    add_definitions(-DJUCE_PLUGINHOST_VST -DJUCE_ASIO)
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup")
 endif()
 
 file(GLOB EIM_SRC_FILES "src/*.cpp" "src/*.h")
@@ -38,14 +34,14 @@ juce_add_console_app(${PROJECT_NAME}
 )
 set_target_properties(${PROJECT_NAME} PROPERTIES JUCE_TARGET_KIND_STRING "App")
 _juce_configure_bundle(${PROJECT_NAME} ${PROJECT_NAME})
-if(NOT MSVC)
+if(APPLE)
     _juce_configure_app_bundle(${PROJECT_NAME} ${PROJECT_NAME})
 endif()
 
 target_sources(${PROJECT_NAME} PRIVATE ${EIM_SRC_FILES})
 target_compile_definitions(${PROJECT_NAME} PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 
-if(MSVC)
+if(WIN32)
     set(thirdpartyPath ${CMAKE_CURRENT_BINARY_DIR}/thirdparty)
     set(vst2sdkDownloadPath ${thirdpartyPath}/pluginterfaces/vst2.x)
     if(NOT EXISTS ${vst2sdkDownloadPath})
@@ -75,7 +71,6 @@ if(MSVC)
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
     string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHa")
-    set_property(TARGET ${PROJECT_NAME} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
 target_compile_definitions(${PROJECT_NAME}

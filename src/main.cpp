@@ -73,7 +73,7 @@ int main(int argc, char* argv[]) {
         puts(("$EIMHostScanner{{" + juce::JSON::toString(arr, true) + "}}EIMHostScanner$").toRawUTF8());
         juce::shutdownJuce_GUI();
     } else if (args->containsOption("-L|--load")) {
-        eim::streams::output_stream::preventStdout();
+        eim::streams::preventStdout();
         juce::JUCEApplicationBase::createInstance = eim::plugin_host::createInstance;
         juce::JUCEApplicationBase::main(argc, (const char**)argv);
     } else if (args->containsOption("-O|--output")) {
@@ -101,10 +101,10 @@ int main(int argc, char* argv[]) {
         setup.bufferSize = args->containsOption("-B|--bufferSize") ? args->getValueForOption("-B|--bufferSize").getIntValue() : 1024;
         setup.sampleRate = args->containsOption("-R|--sampleRate") ? args->getValueForOption("-R|--sampleRate").getIntValue() : 48000;
 
-        eim::streams::output_stream::preventStdout();
-        eim::streams::out.writeByteOrderMessage();
+        eim::streams::preventStdout();
+        eim::streams::output().writeByteOrderMessage();
         
-        if (deviceName == "#") deviceName = eim::streams::in.readString();
+        if (deviceName == "#") deviceName = eim::streams::input().readString();
         
         auto memorySize = args->getValueForOption("-MS|--memory-size");
         eim::audio_output audioCallback(deviceManager, setup, args->getValueForOption("-M|--memory"),
@@ -116,7 +116,7 @@ int main(int argc, char* argv[]) {
         if (deviceName.isNotEmpty() && deviceName != "#") setup.outputDeviceName = deviceName;
         auto error = deviceManager.initialise(0, 2, nullptr, true, "", &setup);
         if (error.isNotEmpty()) {
-            eim::streams::out.writeError(error);
+            eim::streams::output().writeError(error);
             juce::shutdownJuce_GUI();
             return 1;
         }
@@ -153,15 +153,17 @@ int main(int argc, char* argv[]) {
         }
 
         auto jar = currentExec.getSiblingFile(jarFile);
-        if (!jar.exists()) jar = currentExec.getSiblingFile("EchoInMirror.jar");
         if (!jar.exists()) {
-            simple_msgbox::show("Cannot find EchoInMirror.jar!\nPlease make sure EchoInMirror.jar is in the same directory as EchoInMirror.");
-            return 2;
+            jar = currentExec.getSiblingFile("EchoInMirror.jar");
+            if (!jar.exists()) {
+                simple_msgbox::show("Cannot find EchoInMirror.jar!\nPlease make sure EchoInMirror.jar is in the same directory as EchoInMirror.");
+                return 2;
+            }
         }
         auto vmoptions = currentExec.getSiblingFile(".vmoptions");
         juce::StringArray arr;
+        arr.add(file.getFullPathName());
         if (vmoptions.exists()) vmoptions.readLines(arr);
-        arr.insert(0, file.getFullPathName());
         arr.add("-jar");
         arr.add(jar.getFullPathName());
         juce::ChildProcess process;

@@ -31,7 +31,7 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
         bool moreThanOneInstanceAllowed() override { return true; }
 
         void initialise(const juce::String&) override {
-            streams::out.writeByteOrderMessage();
+            streams::output().writeByteOrderMessage();
             triggerAsyncUpdate();
         }
 
@@ -90,7 +90,7 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
         void handleAsyncUpdate() override {
             juce::PluginDescription desc;
             auto jsonStr = args->getValueForOption("-L|--load");
-            auto json = juce::JSON::fromString(jsonStr == "#" ? streams::in.readString() : jsonStr);
+            auto json = juce::JSON::fromString(jsonStr == "#" ? streams::input().readString() : jsonStr);
             desc.name = json.getProperty("name", "").toString();
             desc.pluginFormatName = json.getProperty("pluginFormatName", "").toString();
             desc.fileOrIdentifier = json.getProperty("fileOrIdentifier", "").toString();
@@ -103,7 +103,7 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
             manager.addDefaultFormats();
             processor = manager.createPluginInstance(desc, sampleRate, bufferSize, error);
             if (error.isNotEmpty()) {
-                streams::out.writeError(error);
+                streams::output().writeError(error);
                 quit();
                 return;
             }
@@ -116,7 +116,7 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
             bool isWindowOpen = true;
             if (args->containsOption("-P|--preset")) {
                 auto preset = args->getValueForOption("-P|--preset");
-                isWindowOpen = loadState(preset == "#" ? streams::in.readString() : preset);
+                isWindowOpen = loadState(preset == "#" ? streams::input().readString() : preset);
             }
 
             if (isWindowOpen) createEditorWindow();
@@ -127,19 +127,19 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
 
         void run() override {
             juce::int8 id;
-            while (!threadShouldExit() && streams::in.read(id) == 1) {
+            while (!threadShouldExit() && streams::input().read(id) == 1) {
                 switch (id) {
                     case 0: { // init
                         bool enabledSharedMemory;
-                        streams::in >> sampleRate >> bufferSize >> enabledSharedMemory;
+                        streams::input() >> sampleRate >> bufferSize >> enabledSharedMemory;
                         juce::MessageManagerLock mml(Thread::getCurrentThread());
                         if (!mml.lockWasGained()) return;
                         auto channels = juce::jmax(processor->getTotalNumInputChannels(), processor->getTotalNumOutputChannels());
                         bool setInnerBuffer = true;
                         if (enabledSharedMemory) {
                             int shmSize;
-                            juce::String shmName = streams::in.readString();
-                            streams::in >> shmSize;
+                            juce::String shmName = streams::input().readString();
+                            streams::input() >> shmSize;
                             if (shmSize && shmName.isNotEmpty()) {
                                 shm.reset(jshm::shared_memory::open(shmName.toRawUTF8(), shmSize));
                                 if (shm) {
@@ -160,8 +160,8 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                         juce::int8 numInputChannels, numOutputChannels = 0, flags;
                         juce::int64 timeInSamples;
                         juce::int16 numMidiEvents;
-                        streams::in >> flags >> bpm >> numMidiEvents;
-                        streams::in.readVarLong(timeInSamples);
+                        streams::input() >> flags >> bpm >> numMidiEvents;
+                        streams::input().readVarLong(timeInSamples);
 
                         double timeInSeconds = (double)timeInSamples / sampleRate;
                         auto _isRealtime = (flags & FLAGS_IS_REALTIME) != 0;
@@ -178,27 +178,27 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                         positionInfo.setPpqPosition(timeInSeconds / 60.0 * bpm);
 
                         if (!shm) {
-                            streams::in >> numInputChannels >> numOutputChannels;
+                            streams::input() >> numInputChannels >> numOutputChannels;
                             for (int i = 0; i < numInputChannels; i++)
-                                streams::in.readArray(buffer.getWritePointer(i), bufferSize);
+                                streams::input().readArray(buffer.getWritePointer(i), bufferSize);
                         }
                         juce::MidiBuffer buf;
                         for (int i = 0; i < numMidiEvents; i++) {
                             int data;
                             short time;
-                            streams::in.readVarInt(data);
-                            streams::in >> time;
+                            streams::input().readVarInt(data);
+                            streams::input() >> time;
                             buf.addEvent(juce::MidiMessage(data & 0xFF, (data >> 8) & 0xFF, (data >> 16) & 0xFF), time);
                         }
 
                         int numParameters;
-                        streams::in.readVarInt(numParameters);
+                        streams::input().readVarInt(numParameters);
                         
                         for (int i = 0; i < numParameters; i++) {
                             int pid;
                             float value;
-                            streams::in.readVarInt(pid);
-                            streams::in >> value;
+                            streams::input().readVarInt(pid);
+                            streams::input() >> value;
                             if (pid != 9999999) if (auto* param = parameters[pid]) param->setValue(value);
                         }
                         
@@ -206,8 +206,8 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
 
                         writeNotify(false);
                         
-                        if (!shm) for (int i = 0; i < numOutputChannels; i++) streams::out.writeArray(buffer.getReadPointer(i), bufferSize);
-                        streams::out.flush();
+                        if (!shm) for (int i = 0; i < numOutputChannels; i++) streams::output().writeArray(buffer.getReadPointer(i), bufferSize);
+                        streams::output().flush();
                         break;
                     }
                     case 2: { // open control panel
@@ -218,14 +218,14 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                         break;
                     }
                     case 3: { // save state
-                        streams::out.write(saveState(streams::in.readString()));
-                        streams::out.flush();
+                        streams::output().write(saveState(streams::input().readString()));
+                        streams::output().flush();
                         break;
                     }
                     case 4: { // load state
                         juce::MessageManagerLock mml(Thread::getCurrentThread());
                         if (!mml.lockWasGained()) return;
-                        loadState(streams::in.readString());
+                        loadState(streams::input().readString());
                         break;
                     }
                     case 5: { // bypass state change
@@ -256,7 +256,7 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
             auto hasParameterChanges = !parameterChanges.empty();
             if ((hostBufferPos > 0 || hasParameterChanges) && mtx.try_lock()) {
                 if (hostBufferPos > 0) {
-                    streams::out.writeArray(hostBuffer, hostBufferPos);
+                    streams::output().writeArray(hostBuffer, hostBufferPos);
                     hostBufferPos = 0;
                 }
                 if (hasParameterChanges) writeAllParameterChanges();
@@ -265,13 +265,13 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
             
             if (shouldWriteInformation) writeInitInformation();
             if (shouldWriteLatency) {
-                streams::out.writeAction(4);
-                streams::out << (juce::int32)processor->getLatencySamples();
+                streams::output().writeAction(4);
+                streams::output() << (juce::int32)processor->getLatencySamples();
                 shouldWriteLatency = false;
             }
             if (shouldWriteBypass) {
-                streams::out.writeAction(5);
-                streams::out << bypass;
+                streams::output().writeAction(5);
+                streams::output() << bypass;
                 shouldWriteBypass = false;
             } else if (bypassNewValue != bypass) {
                 bypass = bypassNewValue;
@@ -281,8 +281,8 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                     window->setBypass(bypassNewValue);
                 }
             }
-            streams::out.writeAction(1);
-            streams::out.flush();
+            streams::output().writeAction(1);
+            streams::output().flush();
         }
 
         void valueChanged(juce::Value& value) override {
@@ -338,12 +338,12 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
         void writeInitInformation() {
             shouldWriteInformation = false;
             parameters = processor->getParameters();
-            streams::out.writeAction(0);
-            streams::out << (juce::int8)processor->getTotalNumInputChannels()
+            streams::output().writeAction(0);
+            streams::output() << (juce::int8)processor->getTotalNumInputChannels()
                 << (juce::int8)processor->getTotalNumOutputChannels() << (juce::int32)processor->getLatencySamples();
-            auto size = parameters.size();
-            streams::out.writeVarInt(size);
-            for (int i = 0; i < size; i++) {
+            auto len = parameters.size();
+            streams::output().writeVarInt(len);
+            for (int i = 0; i < len; i++) {
 				auto p = parameters[i];
                 auto value = p->getValue();
                 prevParameterChanges[p->getParameterIndex()] = value;
@@ -354,16 +354,16 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
                 if (p->isMetaParameter()) flags |= PARAMETER_IS_META;
                 if (p->isOrientationInverted()) flags |= PARAMETER_IS_ORIENTATION_INVERTED;
                 
-                streams::out << flags << value << p->getDefaultValue() << (int)p->getCategory()
+                streams::output() << flags << value << p->getDefaultValue() << (int)p->getCategory()
                     << p->getNumSteps() << p->getName(64) << p->getLabel();
 
                 auto valueStrings = p->getAllValueStrings();
                 auto size = valueStrings.size();
-                if (size > 64 || size == 0 || (size == 1 && valueStrings[0].isEmpty())) streams::out.writeVarInt(0);
-                else streams::out << valueStrings;
-				if (i > 30) streams::out.flush(); // avoid buffer overflow
+                if (size > 64 || size == 0 || (size == 1 && valueStrings[0].isEmpty())) streams::output().writeVarInt(0);
+                else streams::output() << valueStrings;
+				if (i > 30) streams::output().flush(); // avoid buffer overflow
             }
-            streams::out.flush();
+            streams::output().flush();
         }
 
         void writeAllParameterChanges() {
@@ -385,11 +385,11 @@ class plugin_host : public juce::JUCEApplication, public juce::AudioPlayHead, pu
             }
 
             if (toRemove) {
-                streams::out.writeAction(3);
-                streams::out.writeVarInt((int) toRemove->size());
+                streams::output().writeAction(3);
+                streams::output().writeVarInt((int) toRemove->size());
                 for (auto id : *toRemove) {
-                    streams::out.writeVarInt(id);
-                    streams::out << prevParameterChanges[id];
+                    streams::output().writeVarInt(id);
+                    streams::output() << prevParameterChanges[id];
                 }
                 delete toRemove;
             }

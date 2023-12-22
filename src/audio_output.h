@@ -17,22 +17,22 @@ namespace eim {
         }
 
         void audioDeviceIOCallbackWithContext(const float* const*, int, float* const* outputChannelData, int, int, const juce::AudioIODeviceCallbackContext&) override {
-            streams::out.writeAction(0);
-            streams::out.flush();
+            streams::output().writeAction(0);
+            streams::output().flush();
             juce::int8 id;
-            if (streams::in.read(id) != 1) {
+            if (streams::input().read(id) != 1) {
                 exit();
                 return;
             }
             switch (id) {
             case 0: {
                 juce::int8 numOutputChannels;
-                streams::in >> numOutputChannels;
+                streams::input() >> numOutputChannels;
                 if (shm) {
                     auto inData = reinterpret_cast<float*>(shm->address());
                     for (int i = 0; i < numOutputChannels; i++)
                         std::memcpy(outputChannelData[i], inData + i * setup.bufferSize, (size_t) setup.bufferSize * sizeof(float));
-                } else for (int i = 0; i < numOutputChannels; i++) streams::in.readArray(outputChannelData[i], setup.bufferSize);
+                } else for (int i = 0; i < numOutputChannels; i++) streams::input().readArray(outputChannelData[i], setup.bufferSize);
                 break;
             }
             case 1:
@@ -44,7 +44,7 @@ namespace eim {
                 std::thread restartingThread([this] {
                     juce::int8 id2;
                     do {
-                        if (streams::in.read(id2) != 1) {
+                        if (streams::input().read(id2) != 1) {
                             exit();
                             return;
                         }
@@ -62,20 +62,20 @@ namespace eim {
             auto bufSize = device->getCurrentBufferSizeSamples();
             auto bufferSizes = device->getAvailableBufferSizes();
             auto sampleRates = device->getAvailableSampleRates();
-            streams::out.writeAction(1);
-            streams::out << ("[" + device->getTypeName() + "] " + device->getName());
-            streams::out.writeVarInt(device->getInputLatencyInSamples());
-            streams::out.writeVarInt(device->getOutputLatencyInSamples());
-            streams::out.writeVarInt((int)device->getCurrentSampleRate());
-            streams::out.writeVarInt(bufSize);
-            streams::out.writeVarInt(sampleRates.size());
-            for (auto it : sampleRates) streams::out.writeVarInt((int)it);
-            streams::out.writeVarInt(bufferSizes.size());
-            for (int it : bufferSizes) streams::out.writeVarInt(it);
-            streams::out << device->hasControlPanel();
-            streams::out.flush();
+            streams::output().writeAction(1);
+            streams::output() << ("[" + device->getTypeName() + "] " + device->getName());
+            streams::output().writeVarInt(device->getInputLatencyInSamples());
+            streams::output().writeVarInt(device->getOutputLatencyInSamples());
+            streams::output().writeVarInt((int)device->getCurrentSampleRate());
+            streams::output().writeVarInt(bufSize);
+            streams::output().writeVarInt(sampleRates.size());
+            for (auto it : sampleRates) streams::output().writeVarInt((int)it);
+            streams::output().writeVarInt(bufferSizes.size());
+            for (int it : bufferSizes) streams::output().writeVarInt(it);
+            streams::output() << device->hasControlPanel();
+            streams::output().flush();
             int outBufferSize;
-            streams::in >> outBufferSize;
+            streams::input() >> outBufferSize;
             if (setup.bufferSize != bufSize) setup.bufferSize = bufSize;
             if (shm && outBufferSize) shm.reset(jshm::shared_memory::open(shm->name(), outBufferSize));
         }

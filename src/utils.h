@@ -81,14 +81,6 @@ namespace eim {
 
             void flush() { std::fflush(oldStdout); }
 
-            static void preventStdout() {
-#ifdef JUCE_WINDOWS
-                juce::ignoreUnused(freopen("NUL", "w", stdout));
-#else
-                juce::ignoreUnused(freopen("/dev/null", "w", stdout));
-#endif
-            }
-
         private:
 #ifdef JUCE_WINDOWS
             FILE* oldStdout = _fdopen(_dup(_fileno(stdout)), "wb");
@@ -150,8 +142,24 @@ namespace eim {
             }
         };
 
-        output_stream out;
-        input_stream in;
+        static output_stream& output() {
+            static output_stream instance;
+            return instance;
+        }
+
+        static input_stream& input() {
+            static input_stream instance;
+            return instance;
+        }
+
+        static void preventStdout() {
+            output();
+#ifdef JUCE_WINDOWS
+            juce::ignoreUnused(freopen("NUL", "w", stdout));
+#else
+            juce::ignoreUnused(freopen("/dev/null", "w", stdout));
+#endif
+        }
     }
 }
 
