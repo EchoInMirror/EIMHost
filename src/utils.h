@@ -3,6 +3,9 @@
 
 #ifdef JUCE_WINDOWS
 #include <io.h>
+#define NULL_FILE_PTR 0
+#else
+#define NULL_FILE_PTR nullptr
 #endif
 
 #include <fcntl.h>
@@ -19,7 +22,7 @@ namespace eim {
         public:
             output_stream() {
                 setvbuf(oldStdout, nullptr, _IOFBF, 10240);
-                juce::ignoreUnused(freopen(0, "wb", oldStdout));
+                juce::ignoreUnused(freopen(NULL_FILE_PTR, "wb", oldStdout));
 #ifdef JUCE_WINDOWS
                 juce::ignoreUnused(_setmode(_fileno(oldStdout), _O_BINARY));
 #endif
@@ -93,7 +96,7 @@ namespace eim {
         public:
             input_stream() {
                 setvbuf(stdin, nullptr, _IOFBF, 10240);
-                juce::ignoreUnused(freopen(0, "rb", stdin));
+                juce::ignoreUnused(freopen(NULL_FILE_PTR, "rb", stdin));
 #ifdef JUCE_WINDOWS
                 juce::ignoreUnused(_setmode(_fileno(stdin), _O_BINARY));
 #endif
